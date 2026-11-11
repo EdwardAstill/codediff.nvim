@@ -16,7 +16,9 @@ After [installation](#installation), save your file edits and run `:CodeDiff` in
 4. Inspect **Staged** before committing. Press `c`, check the displayed HEAD, type a message, then Ctrl-s to commit the index.
 5. Press `q` to close review and restore your editor's keys and chrome.
 
-Need to undo a choice? [Unstage and revert are different](#stage-unstage-and-revert). Other tasks: [stash](#stash-tracked-changes), [branches/worktrees](#inspect-branches-and-worktrees), [OMP](#send-a-hunk-to-omp), [troubleshooting](#safety-and-troubleshooting), and [upgrading](#upgrading-this-fork). `:CodeDiff help` works without opening a review; `:help codediff` opens the full manual.
+Need to undo a choice? [Unstage and revert are different](#stage-unstage-and-revert). Other tasks: [stash](#stash-tracked-changes), [branches/worktrees](#inspect-branches-and-worktrees), [OMP](#send-a-hunk-to-omp), [troubleshooting](#safety-and-troubleshooting), and [upgrading](#upgrading-this-fork).
+
+`:CodeDiff help` loads the plugin and opens shortcuts without starting a review. For the full manual with lazy.nvim, run `:Lazy load codediff.nvim`, then `:help codediff`. The load step is unnecessary once CodeDiff has already been used in that Neovim instance.
 
 ## Features
 

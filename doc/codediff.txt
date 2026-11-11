@@ -28,6 +28,11 @@ window footers. The old Neovim 0.7 compatibility claim does not apply to these
 workflows. Git is required for repository operations. See README.md for the
 native diff library, installation, and build requirements.
 
+With lazy.nvim's command/key loading, the manual is available only after the
+plugin loads. Run :Lazy load codediff.nvim, then :help codediff to read it
+without opening a review. :CodeDiff help loads the plugin and opens its
+shortcut popup directly.
+
 ==============================================================================
 FIRST REVIEW TO COMMIT                                    *codediff-quickstart*
 

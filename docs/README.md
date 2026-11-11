@@ -7,7 +7,7 @@
 - **[Stage, unstage, and revert](../README.md#stage-unstage-and-revert)** — What changes in the index versus the working file.
 - **[OMP handoff](../README.md#send-a-hunk-to-omp)** — Selected hunk plus optional message; draft-only, never auto-submit.
 - **[git-integration.md](git-integration.md)** — Choose the correct comparison, handle mixed staged/unstaged changes, and use revision/history commands.
-- **[Neovim help](../doc/codediff.txt)** — Installed manual: `:help codediff`; popup shortcut lookup: `:CodeDiff help`.
+- **[Neovim help](../doc/codediff.txt)** — With lazy.nvim, run `:Lazy load codediff.nvim`, then `:help codediff` for the full manual. `:CodeDiff help` loads the plugin and opens its shortcut popup directly.
 - **[Upgrade notes](../README.md#upgrading-this-fork)** — Popup/native differences and the `discard_hunk` → `revert_hunk` migration.
 - **[performance.md](performance.md)** — Timeout control for large files and two-phase diff computation.
 

@@ -1,6 +1,6 @@
 # Git workflows and comparison baselines
 
-This is the current Git guide for Edward Astill's CodeDiff fork. Start with the [review walkthrough](../README.md#quick-start); use the [popup controls](../README.md#review-controls) or `:CodeDiff help` for keys. `:help codediff` is the installed manual.
+This is the current Git guide for Edward Astill's CodeDiff fork. Start with the [review walkthrough](../README.md#quick-start); use the [popup controls](../README.md#review-controls) or `:CodeDiff help` for keys. The installed manual is `:help codediff`; with lazy.nvim, run `:Lazy load codediff.nvim` first if CodeDiff has not loaded yet.
 
 ## Choose the right view
 
