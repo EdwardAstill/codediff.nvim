@@ -26,7 +26,7 @@ describe("lazy.nvim compatibility", function()
   end)
 
   describe("module loading", function()
-    -- Simulates: { "esmuellert/codediff.nvim", cmd = "CodeDiff" }
+    -- Simulates: { "EdwardAstill/codediff.nvim", cmd = "CodeDiff" }
 
     it("should load codediff module", function()
       reset_module_cache()
@@ -54,7 +54,7 @@ describe("lazy.nvim compatibility", function()
   end)
 
   describe("setup with opts", function()
-    -- Simulates: { "esmuellert/codediff.nvim", opts = {} }
+    -- Simulates: { "EdwardAstill/codediff.nvim", opts = {} }
 
     it("should work with codediff.setup({})", function()
       reset_module_cache()

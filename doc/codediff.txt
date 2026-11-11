@@ -1,8 +1,8 @@
 codediff.nvim                                 *codediff.txt* *codediff.nvim* *codediff*
 
-CodeDiff is a live code review workspace for Neovim. It keeps repository
-changes synchronized while you inspect diffs, stage or discard hunks, review
-pull requests and history, and resolve merge conflicts.
+This personal fork of CodeDiff focuses on viewing diffs and staging changes
+in Neovim. It keeps repository changes synchronized while you inspect diffs,
+stage or discard hunks, review history, and resolve merge conflicts.
 
 This help file is usage-focused. For installation, build, and development
 details, see README.md.

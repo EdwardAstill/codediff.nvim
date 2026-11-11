@@ -15,7 +15,7 @@ Without the two-tier highlighting system (light backgrounds + deep character hig
 
 ---
 
-## 🎯 CRITICAL FOUNDATIONS FOR CODE AGENT
+## Critical Foundations
 
 **⚠️ MANDATORY READING:**
 
@@ -592,7 +592,7 @@ make test
 # All tests passed!
 ```
 
-**Note for Code Agent:** The above is a **simplified stub**. For production, implement full Myers algorithm following VSCode's `myersDiffAlgorithm.ts` logic. The stub is sufficient for initial testing only.
+**Implementation note:** The above is a **simplified stub**. For production, implement full Myers algorithm following VSCode's `myersDiffAlgorithm.ts` logic. The stub is sufficient for initial testing only.
 
 ---
 
@@ -1294,7 +1294,7 @@ After completing all steps:
 
 ---
 
-## 📝 Notes for Code Agent
+## Implementation Notes
 
 1. **Incremental Testing:** After each step, run validation commands to ensure correctness.
 2. **C Implementation:** Steps 3-5 use simplified stubs. For production, implement full Myers diff and character-level LCS.

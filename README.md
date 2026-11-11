@@ -1,8 +1,8 @@
 # codediff.nvim
 
-**Keep the agent running. Review changes as they land.**
+**Review diffs. Stage the changes you want.**
 
-CodeDiff is a live code review workspace for Neovim with VSCode style diffs, built for human-in-the-loop AI development. Run any coding agent in the background while you inspect and navigate changes as they land.
+This is Edward Astill's personal fork of [CodeDiff](https://github.com/esmuellert/codediff.nvim), focused on viewing diffs and staging changes in Neovim. It retains upstream's VSCode-style diffs, live refresh, history, and conflict resolution without agent integrations or agent development scaffolding.
 
 CodeDiff stays synchronized with a changing repository, so review can continue as the code evolves. From the same workspace, you can stage or discard changes, review branches and pull requests, browse history, and resolve merge conflicts.
 
@@ -14,9 +14,9 @@ https://github.com/user-attachments/assets/3c66a26d-5ff9-4dac-8035-a2f2b7bd2308
 
 ## Features
 
-- **Live review:** Changes appear as they land while any coding agent works in the background.
+- **Live review:** Diffs stay synchronized with repository changes while you edit.
 - **VSCode style diffs:** Review side-by-side or inline changes with line- and character-level highlighting.
-- **Human control:** Inspect, stage, unstage, or discard files and hunks from one review workspace.
+- **Git staging:** Inspect, stage, unstage, or discard files and hunks from one review workspace.
 - **Complete workflows:** Review local changes, staged changes, revisions, pull requests, and history.
 - **Focused navigation:** Move between files and hunks, fold unchanged code, and track moved blocks.
 - **Conflict resolution:** Resolve merge conflicts per block or across the whole file.
@@ -31,14 +31,14 @@ https://github.com/user-attachments/assets/3c66a26d-5ff9-4dac-8035-a2f2b7bd2308
 - `curl` or `wget` on Unix, or PowerShell on Windows, for automatic downloads
 - A Nerd Font is optional for the default Explorer folder icons
 
-**No compiler required!** The plugin automatically downloads pre-built binaries from GitHub releases.
+**No compiler required on supported platforms.** The plugin automatically downloads pre-built binaries from upstream GitHub releases; this fork does not publish binaries.
 
 ### Using lazy.nvim
 
 **Minimal installation:**
 ```lua
 {
-  "esmuellert/codediff.nvim",
+  "EdwardAstill/codediff.nvim",
   cmd = "CodeDiff",
 }
 ```
@@ -46,6 +46,8 @@ https://github.com/user-attachments/assets/3c66a26d-5ff9-4dac-8035-a2f2b7bd2308
 ### Automatic installation
 
 CodeDiff automatically downloads the matching diff library on first use and after plugin updates. No build step is required.
+
+The diff library and Linux OpenMP runtime come from [upstream codediff.nvim releases](https://github.com/esmuellert/codediff.nvim/releases), matching the unchanged `VERSION` file. Live refresh also uses the separately versioned `codediff-watcher` from [upstream codediff releases](https://github.com/esmuellert/codediff/releases). These download sources are intentionally preserved; they do not point at this fork's empty release page. Watcher archive extraction requires `tar` on Unix or PowerShell on Windows.
 
 To install it explicitly or force a reinstall when troubleshooting:
 
@@ -63,7 +65,7 @@ To install without a plugin manager, follow these steps. The example uses a Unix
 
 1. **Clone the repository:**
 ```bash
-git clone https://github.com/esmuellert/codediff.nvim ~/.local/share/nvim/codediff.nvim
+git clone https://github.com/EdwardAstill/codediff.nvim ~/.local/share/nvim/codediff.nvim
 ```
 
 2. **Add to your Neovim runtime path in `init.lua`:**
@@ -126,7 +128,7 @@ Both methods automatically place the library in the plugin root directory.
 
 ```lua
 {
-  "esmuellert/codediff.nvim",
+  "EdwardAstill/codediff.nvim",
   cmd = "CodeDiff",
   opts = {
     -- Highlight configuration
