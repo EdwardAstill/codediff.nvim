@@ -41,7 +41,7 @@ the working-file hunk to LEFT: index for unstaged, HEAD for staged, or the
 explicit compared revision. The index stays unchanged; staged content remains
 staged. Revert refuses renamed comparisons and conflicting working edits.
 Revert/stash refuse unsaved affected buffers; save in the editor first.
-Reverted working edits cannot be recovered by Git.
+Unstaged working edits may not be recoverable by Git.
 
 With omp.nvim installed, o captures the hunk and opens an optional-message
 composer. Ctrl-s adds the message and hunk to the existing OMP draft without

@@ -450,7 +450,7 @@ local function revert_selected_hunk(ctx, session, hunk, index)
   local lines = {
     path,
     string.format("Revert hunk %d of %d in the working file to LEFT (%s)?", index, #diff.changes, baseline),
-    "The index stays unchanged, including staged changes. Working edits cannot be recovered by Git.",
+    "The index stays unchanged. Unstaged working edits may not be recoverable by Git.",
   }
   local function apply()
     if lifecycle.get_session(ctx.tabpage) ~= session or session.closing
