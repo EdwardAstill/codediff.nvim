@@ -33,9 +33,9 @@ local function create_group_node(label, name, files, children)
 end
 
 -- Create tree data structure from git status result
-function M.create_tree_data(status_result, git_root, base_revision, is_dir_mode, visible_groups)
+function M.create_tree_data(status_result, git_root, base_revision, is_dir_mode, visible_groups, view_mode)
   local explorer_config = config.options.explorer or {}
-  local view_mode = explorer_config.view_mode or "list"
+  view_mode = view_mode or explorer_config.view_mode or "list"
   visible_groups = visible_groups or explorer_config.visible_groups or {}
 
   -- Filter merge artifacts and apply file filter
@@ -84,12 +84,25 @@ function M.create_tree_data(status_result, git_root, base_revision, is_dir_mode,
   end
 end
 
+function M.pane_data(explorer)
+  local data = explorer.data
+  local groups = explorer.visible_groups
+  if explorer.group then
+    groups = {
+      unstaged = explorer.group == "unstaged" and groups.unstaged ~= false,
+      staged = explorer.group == "staged" and groups.staged ~= false,
+      conflicts = explorer.group == "unstaged" and groups.conflicts ~= false,
+    }
+  end
+  return M.create_tree_data(data.status_result, data.git_root, data.base_revision, not data.git_root, groups, explorer.view_mode)
+end
+
 local function walk_collapsible(tree, visit)
   local function walk(node)
     if not node.data or node.data.type ~= "group" and node.data.type ~= "directory" then
       return
     end
-    local key = node.data.path or node.data.name
+    local key = (node.data.group or "") .. ":" .. (node.data.dir_path or node.data.path or node.data.name or "")
     if key then
       visit(node, key)
     end
@@ -107,24 +120,40 @@ end
 
 -- Rebuild from supplied data, retaining the user's tree presentation state.
 function M.rebuild(explorer)
-  local data, tree = explorer.data, explorer.tree
-  if not data.status_result then
-    return
-  end
-  local collapsed = {}
-  walk_collapsible(tree, function(node, key)
-    collapsed[key] = not node:is_expanded()
-  end)
-  tree:set_nodes(M.create_tree_data(data.status_result, data.git_root, data.base_revision, not data.git_root, explorer.visible_groups))
-  walk_collapsible(tree, function(node, key)
-    if collapsed[key] then
-      node:collapse()
-    else
-      node:expand()
+  local root = explorer.root or explorer
+  for _, pane in ipairs(root.panes or { root }) do
+    local data, tree = pane.data, pane.tree
+    if data.status_result then
+      local cursor = pane.winid and vim.api.nvim_win_is_valid(pane.winid) and vim.api.nvim_win_get_cursor(pane.winid)
+      local selected = cursor and tree:get_node(cursor[1])
+      selected = selected and selected.data
+      local collapsed = {}
+      walk_collapsible(tree, function(node, key)
+        collapsed[key] = not node:is_expanded()
+      end)
+      tree:set_nodes(M.pane_data(pane))
+      walk_collapsible(tree, function(node, key)
+        if collapsed[key] then
+          node:collapse()
+        else
+          node:expand()
+        end
+      end)
+      if not root.is_hidden then
+        tree:render()
+        if selected and cursor then
+          for line = 1, vim.api.nvim_buf_line_count(pane.bufnr) do
+            local node = tree:get_node(line)
+            local entry = node and node.data
+            if entry and entry.type == selected.type and entry.group == selected.group
+              and (entry.dir_path or entry.path or entry.name) == (selected.dir_path or selected.path or selected.name) then
+              vim.api.nvim_win_set_cursor(pane.winid, { line, 0 })
+              break
+            end
+          end
+        end
+      end
     end
-  end)
-  if not explorer.is_hidden then
-    tree:render()
   end
 end
 
@@ -147,6 +176,18 @@ function M.get_all_files(tree)
   end
   for _, node in ipairs(tree:get_nodes()) do
     collect(node)
+  end
+  return files
+end
+
+function M.get_pane_files(explorer)
+  local root = explorer.root or explorer
+  local files = {}
+  for _, pane in ipairs(root.panes or { root }) do
+    for _, file in ipairs(M.get_all_files(pane.tree)) do
+      file.pane = pane
+      files[#files + 1] = file
+    end
   end
   return files
 end

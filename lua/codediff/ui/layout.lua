@@ -13,6 +13,10 @@ function M.arrange(tabpage)
   if not session then
     return
   end
+  if session.popup then
+    require("codediff.ui.popup").arrange(session)
+    return
+  end
 
   local original_win = session.original_win
   local modified_win = session.modified_win

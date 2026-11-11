@@ -20,9 +20,10 @@ end
 local function cleanup_diff(tabpage)
   local active_diffs = session.get_active_diffs()
   local diff = active_diffs[tabpage]
-  if not diff then
+  if not diff or diff.closing then
     return
   end
+  diff.closing = true
 
   -- Emit CodeDiffClose User autocmd
   vim.api.nvim_exec_autocmds("User", {
@@ -51,6 +52,10 @@ local function cleanup_diff(tabpage)
 
   -- Hand every mapped key back to whatever owned it before codediff
   keymaps.dispose_keymaps(tabpage)
+
+  if diff.popup then
+    require("codediff.ui.popup").close(diff)
+  end
 
   -- Delete virtual buffers if they're still valid
   if vim.api.nvim_buf_is_valid(diff.original_bufnr) then
@@ -99,14 +104,21 @@ local function owns_window(diff, winid)
     return true
   end
   local panel_view = diff.panel and diff.panel.view
-  return panel_view and panel_view.winid == winid or false
+  for _, pane in ipairs(panel_view and (panel_view.panes or { panel_view }) or {}) do
+    if pane.winid == winid then
+      return true
+    end
+  end
+  return false
 end
 
--- Count windows in current tabpage that have diff markers
-local function count_diff_windows()
+-- Floats are not included in winnr('$').
+local function count_diff_windows(tabpage)
+  if not vim.api.nvim_tabpage_is_valid(tabpage) then
+    return 0
+  end
   local count = 0
-  for i = 1, vim.fn.winnr("$") do
-    local win = vim.fn.win_getid(i)
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
     if vim.w[win].codediff_restore then
       count = count + 1
     end
@@ -147,16 +159,30 @@ function M.setup_autocmds()
       if not closed_win then
         return
       end
+      for tabpage, diff in pairs(session.get_active_diffs()) do
+        if diff.popup and not diff.popup.closing and owns_window(diff, closed_win) then
+          local root = diff.panel and diff.panel.view
+          local hidden_panel = root and root.is_hidden and closed_win ~= diff.original_win and closed_win ~= diff.modified_win and closed_win ~= diff.result_win
+          if not hidden_panel then
+            vim.schedule(function()
+              if session.get_active_diffs()[tabpage] == diff then
+                cleanup_diff(tabpage)
+              end
+            end)
+          end
+          return
+        end
+      end
 
       -- Give Neovim a moment to update window state
       vim.schedule(function()
         -- Check if the closed window was part of a diff
         local active_diffs = session.get_active_diffs()
         for tabpage, diff in pairs(active_diffs) do
-          if diff.original_win == closed_win or diff.modified_win == closed_win then
+          if not diff.popup and (diff.original_win == closed_win or diff.modified_win == closed_win) then
             -- single_pane/inline mode: we expect only 1 diff window
             local is_single_window = diff.single_pane == true or diff.layout == "inline"
-            local diff_win_count = count_diff_windows()
+            local diff_win_count = count_diff_windows(tabpage)
             local threshold = is_single_window and 0 or 1
             if diff_win_count <= threshold then
               cleanup_diff(tabpage)
@@ -206,8 +232,8 @@ function M.setup_autocmds()
           return
         end
         local diff = session.get_active_diffs()[tabpage]
-        if diff then
-          local diff_win_count = count_diff_windows()
+        if diff and not diff.closing then
+          local diff_win_count = count_diff_windows(tabpage)
           local is_single_window = diff.single_pane == true or diff.layout == "inline"
           local threshold = is_single_window and 0 or 1
           if diff_win_count <= threshold then
@@ -270,8 +296,12 @@ local function cleanup_for_quit(tabpage)
   if diff then
     -- Explorer / history panel buffer
     local panel_view = diff.panel and diff.panel.view
-    if panel_view and panel_view.bufnr then
-      bufs_to_delete[panel_view.bufnr] = true
+    if panel_view then
+      for _, pane in ipairs(panel_view.panes or { panel_view }) do
+        if pane.bufnr then
+          bufs_to_delete[pane.bufnr] = true
+        end
+      end
     end
     -- Diff pane buffers (virtual AND scratch placeholders)
     if diff.original_bufnr then
@@ -311,6 +341,10 @@ function M.close(tabpage)
   end
   if not accessors.confirm_close_with_unsaved(tabpage) then
     return false
+  end
+  if diff.popup then
+    cleanup_diff(tabpage)
+    return true
   end
 
   if diff.exit_on_close then

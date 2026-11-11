@@ -210,15 +210,12 @@ function M.comparison(panel, file)
     elseif file.group == "staged" then
       original_revision, modified_revision = "HEAD", ":0"
     else
-      original_revision, modified_revision = "HEAD", "WORKING"
+      original_revision, modified_revision = ":0", "WORKING"
       for _, staged in ipairs(data.status_result.staged or {}) do
         if staged.path == file.path then
-          original_revision, original = ":0", file.path
+          original = file.path
           break
         end
-      end
-      if file.status == "D" then
-        original_revision = ":0"
       end
     end
   end
@@ -227,7 +224,10 @@ function M.comparison(panel, file)
     if file.status == "??" or file.status == "A" then
       single_side, original_revision = "modified", nil
     elseif file.status == "D" then
-      single_side, modified_revision = "original", nil
+      single_side = "original"
+      if modified_revision ~= ":0" then
+        modified_revision = nil
+      end
     end
   end
   return {

@@ -362,8 +362,20 @@ function M.render_whole_file(bufnr, side)
   vim.api.nvim_buf_clear_namespace(bufnr, ns_filler, 0, -1)
   gutter_signs.set_whole_file(bufnr, side)
 
+  local count = vim.api.nvim_buf_line_count(bufnr)
+  if vim.api.nvim_buf_get_offset(bufnr, count) == 0 then
+    count = 0
+  end
+  local result = { changes = {}, moves = {} }
+  if count > 0 then
+    result.changes[1] = {
+      original = { start_line = 1, end_line = side == "original" and count + 1 or 1 },
+      modified = { start_line = 1, end_line = side == "modified" and count + 1 or 1 },
+    }
+  end
+
   if not config.options.diff.highlight_added_deleted_files then
-    return
+    return result
   end
 
   local highlight_groups = {
@@ -384,6 +396,7 @@ function M.render_whole_file(bufnr, side)
     right_gravity = false,
     end_right_gravity = true,
   })
+  return result
 end
 
 -- ============================================================================

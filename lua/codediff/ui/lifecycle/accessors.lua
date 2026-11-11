@@ -353,8 +353,12 @@ function M.update_buffers(tabpage, original_bufnr, modified_bufnr)
       keep[modified_bufnr] = true
     end
     local panel_view = sess.panel and sess.panel.view
-    if panel_view and panel_view.bufnr then
-      keep[panel_view.bufnr] = true
+    if panel_view then
+      for _, pane in ipairs(panel_view.panes or { panel_view }) do
+        if pane.bufnr then
+          keep[pane.bufnr] = true
+        end
+      end
     end
     if sess.result_bufnr then
       keep[sess.result_bufnr] = true

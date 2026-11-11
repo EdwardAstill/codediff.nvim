@@ -9,19 +9,48 @@ local layout = require("codediff.ui.layout")
 -- Find line number for a file node by scanning the tree
 -- Returns the line number or nil if not found
 local function find_node_line(explorer, path, group)
-  local line_count = vim.api.nvim_buf_line_count(explorer.bufnr)
-  for line = 1, line_count do
-    local node = explorer.tree:get_node(line)
-    if node and node.data and node.data.path == path and node.data.group == group then
-      return line
+  local root = explorer.root or explorer
+  for _, pane in ipairs(root.panes or { root }) do
+    local function find(nodes)
+      for _, node in ipairs(nodes) do
+        if node.data.path == path and node.data.group == group then
+          return node
+        end
+        for _, id in ipairs(node:get_child_ids() or {}) do
+          local found = find({ pane.tree:get_node(id) })
+          if found then
+            node:expand()
+            return found
+          end
+        end
+      end
+    end
+    local node = find(pane.tree:get_nodes())
+    if node then
+      pane.tree:render()
+      return node._line, pane
     end
   end
-  return nil
+end
+
+local function move_to_file(explorer, file)
+  local line, pane = find_node_line(explorer, file.path, file.group)
+  if line and pane.winid and vim.api.nvim_win_is_valid(pane.winid) then
+    vim.api.nvim_win_set_cursor(pane.winid, { line, 0 })
+    local current = vim.api.nvim_get_current_buf()
+    local root = explorer.root or explorer
+    for _, candidate in ipairs(root.panes or { root }) do
+      if candidate.bufnr == current then
+        vim.api.nvim_set_current_win(pane.winid)
+        break
+      end
+    end
+  end
 end
 
 -- Navigate to next file in explorer
 function M.navigate_next(explorer)
-  local all_files = tree_module.get_all_files(explorer.tree)
+  local all_files = tree_module.get_pane_files(explorer)
   if #all_files == 0 then
     vim.notify("No files in explorer", vim.log.levels.WARN)
     return
@@ -56,16 +85,7 @@ function M.navigate_next(explorer)
   local next_index = current_index % #all_files + 1
   local next_file = all_files[next_index]
 
-  -- Update tree selection visually (switch to explorer window temporarily)
-  local current_win = vim.api.nvim_get_current_win()
-  if vim.api.nvim_win_is_valid(explorer.winid) then
-    local line = find_node_line(explorer, next_file.data.path, next_file.data.group)
-    if line then
-      vim.api.nvim_set_current_win(explorer.winid)
-      vim.api.nvim_win_set_cursor(explorer.winid, { line, 0 })
-      vim.api.nvim_set_current_win(current_win)
-    end
-  end
+  move_to_file(explorer, next_file.data)
 
   -- Trigger file select
   explorer.on_file_select(next_file.data)
@@ -73,7 +93,7 @@ end
 
 -- Navigate to previous file in explorer
 function M.navigate_prev(explorer)
-  local all_files = tree_module.get_all_files(explorer.tree)
+  local all_files = tree_module.get_pane_files(explorer)
   if #all_files == 0 then
     vim.notify("No files in explorer", vim.log.levels.WARN)
     return
@@ -112,16 +132,7 @@ function M.navigate_prev(explorer)
   prev_index = prev_index % #all_files + 1
   local prev_file = all_files[prev_index]
 
-  -- Update tree selection visually (switch to explorer window temporarily)
-  local current_win = vim.api.nvim_get_current_win()
-  if vim.api.nvim_win_is_valid(explorer.winid) then
-    local line = find_node_line(explorer, prev_file.data.path, prev_file.data.group)
-    if line then
-      vim.api.nvim_set_current_win(explorer.winid)
-      vim.api.nvim_win_set_cursor(explorer.winid, { line, 0 })
-      vim.api.nvim_set_current_win(current_win)
-    end
-  end
+  move_to_file(explorer, prev_file.data)
 
   -- Trigger file select
   explorer.on_file_select(prev_file.data)
@@ -129,6 +140,22 @@ end
 
 -- Toggle explorer visibility (hide/show)
 function M.toggle_visibility(explorer)
+  explorer = explorer and (explorer.root or explorer)
+  if explorer and explorer.panes then
+    explorer.is_hidden = not explorer.is_hidden
+    if explorer.is_hidden then
+      for _, pane in ipairs(explorer.panes) do
+        if pane.winid and vim.api.nvim_win_is_valid(pane.winid) then
+          vim.api.nvim_win_close(pane.winid, true)
+        end
+        pane.winid = nil
+      end
+    else
+      require("codediff.ui.popup").arrange(require("codediff.ui.lifecycle").get_session(explorer.tabpage))
+      tree_module.rebuild(explorer)
+    end
+    return
+  end
   if not explorer or not explorer.split then
     return
   end
@@ -156,16 +183,22 @@ end
 
 -- Toggle view mode between 'list' and 'tree'
 function M.toggle_view_mode(explorer)
+  explorer = explorer and (explorer.root or explorer)
   if not explorer then
     return
   end
 
   local explorer_config = config.options.explorer or {}
-  local current_mode = explorer_config.view_mode or "list"
+  local current_mode = explorer.view_mode or explorer_config.view_mode or "list"
   local new_mode = (current_mode == "list") and "tree" or "list"
 
-  -- Update config
-  config.options.explorer.view_mode = new_mode
+  if explorer.panes then
+    for _, pane in ipairs(explorer.panes) do
+      pane.view_mode = new_mode
+    end
+  else
+    config.options.explorer.view_mode = new_mode
+  end
 
   -- Presentation changes render the current data without requesting Git.
   tree_module.rebuild(explorer)
@@ -230,19 +263,7 @@ function M.toggle_staged_view(explorer)
     return false
   end
 
-  -- Move cursor to the sibling entry in the tree so `]f`/`[f` and refresh
-  -- have a consistent anchor (matches navigate_next/prev behavior).
-  if explorer.winid and vim.api.nvim_win_is_valid(explorer.winid) then
-    local line = find_node_line(explorer, target_file.path, target_group)
-    if line then
-      local current_win = vim.api.nvim_get_current_win()
-      vim.api.nvim_set_current_win(explorer.winid)
-      vim.api.nvim_win_set_cursor(explorer.winid, { line, 0 })
-      if current_win ~= explorer.winid and vim.api.nvim_win_is_valid(current_win) then
-        vim.api.nvim_set_current_win(current_win)
-      end
-    end
-  end
+  move_to_file(explorer, { path = target_file.path, group = target_group })
 
   explorer.on_file_select({
     path = target_file.path,
@@ -256,6 +277,7 @@ end
 
 -- Toggle visibility of a group (staged/unstaged/conflicts)
 function M.toggle_group(explorer, group_name)
+  explorer = explorer and (explorer.root or explorer)
   if not explorer or not explorer.visible_groups then
     return
   end
@@ -275,7 +297,7 @@ end
 -- @param file_path: relative path to file
 -- @param group: "staged", "unstaged", or "conflicts"
 -- @return boolean: true if operation was initiated
-function M.toggle_stage_file(git_root, file_path, group)
+function M.toggle_stage_file(git_root, file_path, group, old_path)
   if not git_root then
     vim.notify("Stage/unstage only available in git mode", vim.log.levels.WARN)
     return false
@@ -290,63 +312,19 @@ function M.toggle_stage_file(git_root, file_path, group)
     return false
   end
 
-  if group == "staged" then
-    -- Unstage file
-    git.unstage_file(git_root, file_path, function(err)
-      if err then
-        vim.schedule(function()
-          vim.notify(err, vim.log.levels.ERROR)
-        end)
-      end
-    end)
-  elseif group == "unstaged" then
-    -- Stage file
-    git.stage_file(git_root, file_path, function(err)
-      if err then
-        vim.schedule(function()
-          vim.notify(err, vim.log.levels.ERROR)
-        end)
-      end
-    end)
-  elseif group == "conflicts" then
-    -- Stage conflict file (marks as resolved)
-    git.stage_file(git_root, file_path, function(err)
-      if err then
-        vim.schedule(function()
-          vim.notify(err, vim.log.levels.ERROR)
-        end)
-      end
-    end)
-  end
+  local paths = old_path and old_path ~= file_path and { file_path, old_path } or file_path
+  local mutate = group == "staged" and git.unstage_file or git.stage_file
+  mutate(git_root, paths, function(err)
+    if err then
+      vim.schedule(function()
+        vim.notify(err, vim.log.levels.ERROR)
+      end)
+    end
+  end)
 
   return true
 end
 
--- Stage/unstage all files under a directory
--- @param git_root: git repository root
--- @param dir_path: relative directory path
--- @param group: "staged" or "unstaged"
-local function toggle_stage_directory(git_root, dir_path, group)
-  if group == "staged" then
-    -- Unstage directory
-    git.unstage_file(git_root, dir_path, function(err)
-      if err then
-        vim.schedule(function()
-          vim.notify(err, vim.log.levels.ERROR)
-        end)
-      end
-    end)
-  elseif group == "unstaged" then
-    -- Stage directory
-    git.stage_file(git_root, dir_path, function(err)
-      if err then
-        vim.schedule(function()
-          vim.notify(err, vim.log.levels.ERROR)
-        end)
-      end
-    end)
-  end
-end
 
 -- Stage/unstage toggle for the selected entry in explorer (file or directory)
 function M.toggle_stage_entry(explorer, tree)
@@ -367,13 +345,13 @@ function M.toggle_stage_entry(explorer, tree)
     -- Directory uses dir_path, not path
     local dir_path = node.data.dir_path
     if dir_path then
-      toggle_stage_directory(explorer.data.git_root, dir_path, group)
+      M.toggle_stage_file(explorer.data.git_root, dir_path, group)
     end
   else
     -- File uses path
     local path = node.data.path
     if path then
-      M.toggle_stage_file(explorer.data.git_root, path, group)
+      M.toggle_stage_file(explorer.data.git_root, path, group, node.data.status == "R" and node.data.old_path or nil)
     end
   end
 end

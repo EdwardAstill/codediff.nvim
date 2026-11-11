@@ -64,6 +64,15 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
     end, { desc = "Close codediff tab" })
   end
 
+  if session and session.popup then
+    lifecycle.set_tab_keymap(tabpage, "n", "<Tab>", function()
+      panes.cycle(ctx, 1)
+    end, { desc = "Focus next CodeDiff pane" })
+    lifecycle.set_tab_keymap(tabpage, "n", "<S-Tab>", function()
+      panes.cycle(ctx, -1)
+    end, { desc = "Focus previous CodeDiff pane" })
+  end
+
   -- Hunk navigation (]c, [c)
   if keymaps.next_hunk then
     lifecycle.set_tab_keymap(tabpage, "n", keymaps.next_hunk, navigation.next_hunk, { desc = "Next hunk" })
@@ -88,13 +97,13 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
   -- Skipped in conflict mode: the merge view uses 2do/3do on the result pane
   -- instead. Not claiming the keys here means any mapping the user already had
   -- on do/dp is handed back for the duration of the merge, rather than deleted.
-  if keymaps.diff_get and not is_conflict then
+  if keymaps.diff_get and not is_conflict and not (session and session.popup) then
     local desc = is_inline and "Revert hunk to original" or "Get change from other buffer"
     lifecycle.set_tab_keymap(tabpage, "n", keymaps.diff_get, function()
       diffget.diff_get(ctx)
     end, { desc = desc })
   end
-  if keymaps.diff_put and not is_conflict then
+  if keymaps.diff_put and not is_conflict and not (session and session.popup) then
     local desc = is_inline and "Accept change (no-op in inline)" or "Put change to other buffer"
     lifecycle.set_tab_keymap(tabpage, "n", keymaps.diff_put, function()
       diffget.diff_put(ctx)
@@ -105,7 +114,7 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
       panes.open_in_prev_tab(ctx)
     end, { desc = "Open buffer in previous tab" })
   end
-  if keymaps.toggle_layout then
+  if keymaps.toggle_layout and not (session and session.popup) then
     lifecycle.set_tab_keymap(tabpage, "n", keymaps.toggle_layout, function()
       require("codediff.ui.view").toggle_layout(tabpage)
     end, { desc = "Toggle diff layout" })
@@ -186,7 +195,7 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
         hunk.unstage_hunk(ctx)
       end, vim.tbl_extend("force", hunk_opts, { desc = "Unstage hunk under cursor" }))
     end
-    if keymaps.discard_hunk then
+    if keymaps.discard_hunk and not (session and session.popup) then
       lifecycle.set_buf_keymap(tabpage, bufnr, "n", keymaps.discard_hunk, function()
         hunk.discard_hunk(ctx)
       end, vim.tbl_extend("force", hunk_opts, { desc = "Discard hunk under cursor" }))

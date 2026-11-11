@@ -41,7 +41,9 @@ function M.find_hunk_at_cursor(ctx)
   return nil, nil
 end
 
-local function build_hunk_patch(file_path, orig_lines, mod_lines, orig_start, mod_start)
+local function build_hunk_patch(file_path, orig_lines, mod_lines, orig_start, mod_start, new_file, deleted_file)
+  orig_lines = new_file and {} or orig_lines
+  mod_lines = deleted_file and {} or mod_lines
   local orig_count = #orig_lines
   local mod_count = #mod_lines
 
@@ -50,9 +52,14 @@ local function build_hunk_patch(file_path, orig_lines, mod_lines, orig_start, mo
   local hdr_orig_start = orig_count == 0 and (orig_start > 0 and orig_start - 1 or 0) or orig_start
   local hdr_mod_start = mod_count == 0 and (mod_start > 0 and mod_start - 1 or 0) or mod_start
 
+  local function header(prefix)
+    return '"' .. (prefix .. file_path):gsub('[%c\\"]', function(char)
+      return string.format("\\%03o", string.byte(char))
+    end) .. '"'
+  end
   local parts = {
-    string.format("--- a/%s", file_path),
-    string.format("+++ b/%s", file_path),
+    "--- " .. (new_file and "/dev/null" or header("a/")),
+    "+++ " .. (deleted_file and "/dev/null" or header("b/")),
     string.format("@@ -%d,%d +%d,%d @@", hdr_orig_start, orig_count, hdr_mod_start, mod_count),
   }
 
@@ -75,7 +82,7 @@ function M.stage_hunk(ctx)
   end
 
   -- Only allow staging from unstaged views (working tree changes)
-  if session.modified_revision ~= nil then
+  if session.modified_revision ~= nil or (session.original_revision ~= ":0" and session.original.relative ~= "") then
     vim.notify("Stage only works on unstaged changes", vim.log.levels.WARN)
     return
   end
@@ -87,7 +94,7 @@ function M.stage_hunk(ctx)
   end
 
   -- Get the file path relative to git root
-  local file_path = (session.original.relative ~= "" and session.original.relative) or session.modified.relative
+  local file_path = (session.modified.relative ~= "" and session.modified.relative) or session.original.relative
   if not file_path or file_path == "" then
     vim.notify("No file path for staging", vim.log.levels.WARN)
     return
@@ -103,7 +110,8 @@ function M.stage_hunk(ctx)
   local orig_lines = vim.api.nvim_buf_get_lines(stage_orig_buf, hunk.original.start_line - 1, hunk.original.end_line - 1, false)
   local mod_lines = vim.api.nvim_buf_get_lines(stage_mod_buf, hunk.modified.start_line - 1, hunk.modified.end_line - 1, false)
 
-  local patch = build_hunk_patch(file_path, orig_lines, mod_lines, hunk.original.start_line, hunk.modified.start_line)
+  local patch = build_hunk_patch(file_path, orig_lines, mod_lines, hunk.original.start_line, hunk.modified.start_line,
+    session.original.relative == "", session.modified.relative == "")
 
   local git = require("codediff.core.git")
   git.apply_patch(session.git_root, patch, false, function(err)
@@ -111,6 +119,7 @@ function M.stage_hunk(ctx)
       vim.notify("Failed to stage hunk: " .. err, vim.log.levels.ERROR)
       return
     end
+    refresh.request(ctx.tabpage, { full = true })
     vim.notify(string.format("Staged hunk %d", hunk_idx), vim.log.levels.INFO)
   end)
 end
@@ -134,7 +143,7 @@ function M.unstage_hunk(ctx)
     return
   end
 
-  local file_path = (session.original.relative ~= "" and session.original.relative) or session.modified.relative
+  local file_path = (session.modified.relative ~= "" and session.modified.relative) or session.original.relative
   if not file_path or file_path == "" then
     vim.notify("No file path for unstaging", vim.log.levels.WARN)
     return
@@ -150,7 +159,8 @@ function M.unstage_hunk(ctx)
   local orig_lines = vim.api.nvim_buf_get_lines(unstage_orig_buf, hunk.original.start_line - 1, hunk.original.end_line - 1, false)
   local mod_lines = vim.api.nvim_buf_get_lines(unstage_mod_buf, hunk.modified.start_line - 1, hunk.modified.end_line - 1, false)
 
-  local patch = build_hunk_patch(file_path, orig_lines, mod_lines, hunk.original.start_line, hunk.modified.start_line)
+  local patch = build_hunk_patch(file_path, orig_lines, mod_lines, hunk.original.start_line, hunk.modified.start_line,
+    session.original.relative == "", session.modified.relative == "")
 
   local git = require("codediff.core.git")
   git.apply_patch(session.git_root, patch, true, function(err)
@@ -158,6 +168,7 @@ function M.unstage_hunk(ctx)
       vim.notify("Failed to unstage hunk: " .. err, vim.log.levels.ERROR)
       return
     end
+    refresh.request(ctx.tabpage, { full = true })
     vim.notify(string.format("Unstaged hunk %d", hunk_idx), vim.log.levels.INFO)
   end)
 end

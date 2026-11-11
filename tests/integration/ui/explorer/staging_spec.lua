@@ -272,11 +272,12 @@ describe("Explorer review-flow re-selection (issue #347)", function()
 
   -- Find the tree line for (path, group); nil if absent.
   local function line_for(explorer, file_path, group)
-    local line_count = vim.api.nvim_buf_line_count(explorer.bufnr)
-    for line = 1, line_count do
-      local node = explorer.tree:get_node(line)
-      if node and node.data and node.data.path == file_path and node.data.group == group then
-        return line
+    for _, pane in ipairs(explorer.panes or { explorer }) do
+      for line = 1, vim.api.nvim_buf_line_count(pane.bufnr) do
+        local node = pane.tree:get_node(line)
+        if node and node.data and node.data.path == file_path and node.data.group == group then
+          return line
+        end
       end
     end
     return nil

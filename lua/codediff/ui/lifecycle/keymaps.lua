@@ -40,8 +40,12 @@ local function session_buffers(sess)
     buffers.modified = sess.modified_bufnr
   end
   local panel_view = sess.panel and sess.panel.view
-  if panel_view and panel_view.bufnr and vim.api.nvim_buf_is_valid(panel_view.bufnr) then
-    buffers.panel = panel_view.bufnr
+  if panel_view then
+    for index, pane in ipairs(panel_view.panes or { panel_view }) do
+      if pane.bufnr and vim.api.nvim_buf_is_valid(pane.bufnr) then
+        buffers["panel" .. index] = pane.bufnr
+      end
+    end
   end
   if sess.result_bufnr and vim.api.nvim_buf_is_valid(sess.result_bufnr) then
     buffers.result = sess.result_bufnr

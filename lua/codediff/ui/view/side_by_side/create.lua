@@ -32,16 +32,26 @@ end
 --- content arrives later via the panel.
 --- @param tabpage number
 --- @return number original_win, number modified_win, table original_info, table modified_info
-local function open_placeholder_panes(tabpage)
-  local original_win = vim.api.nvim_get_current_win()
-  vim.cmd(diff_split_cmd())
-  local modified_win = vim.api.nvim_get_current_win()
+local function open_placeholder_panes(tabpage, popup)
+  local original_win, modified_win
+  if not popup then
+    original_win = vim.api.nvim_get_current_win()
+    vim.cmd(diff_split_cmd())
+    modified_win = vim.api.nvim_get_current_win()
+  end
 
   -- A buffer each, so the tab's initial buffer can be deleted afterwards.
   local orig_scratch = vim.api.nvim_create_buf(false, true)
   local mod_scratch = vim.api.nvim_create_buf(false, true)
   vim.bo[orig_scratch].buftype = "nofile"
   vim.bo[mod_scratch].buftype = "nofile"
+  if popup then
+    vim.bo[orig_scratch].bufhidden = "wipe"
+    vim.bo[mod_scratch].bufhidden = "wipe"
+    local geometry = require("codediff.ui.popup").geometry()
+    original_win = vim.api.nvim_open_win(orig_scratch, false, geometry.original)
+    modified_win = vim.api.nvim_open_win(mod_scratch, true, geometry.modified)
+  end
   pcall(vim.api.nvim_buf_set_name, orig_scratch, "CodeDiff " .. tabpage .. ".1")
   pcall(vim.api.nvim_buf_set_name, mod_scratch, "CodeDiff " .. tabpage .. ".2")
   vim.api.nvim_win_set_buf(original_win, orig_scratch)
@@ -81,11 +91,21 @@ local function open_diff_panes(session_config)
   local original_info = prepare_buffer(original_is_virtual, session_config.git_root, session_config.original_revision, session_config.original)
   local modified_info = prepare_buffer(modified_is_virtual, session_config.git_root, session_config.modified_revision, session_config.modified)
 
-  local original_win = vim.api.nvim_get_current_win()
+  local original_win, modified_win
+  if session_config.popup then
+    original_win, modified_win = open_placeholder_panes(vim.api.nvim_get_current_tabpage(), true)
+    vim.api.nvim_set_current_win(original_win)
+  else
+    original_win = vim.api.nvim_get_current_win()
+  end
   load_side(original_win, original_info, original_is_virtual)
 
-  vim.cmd(diff_split_cmd())
-  local modified_win = vim.api.nvim_get_current_win()
+  if not modified_win then
+    vim.cmd(diff_split_cmd())
+    modified_win = vim.api.nvim_get_current_win()
+  else
+    vim.api.nvim_set_current_win(modified_win)
+  end
   load_side(modified_win, modified_info, modified_is_virtual)
 
   welcome_window.sync(original_win)
@@ -304,21 +324,39 @@ end
 ---@param on_ready? function
 ---@return table|nil
 function M.create(session_config, filetype, on_ready)
-  vim.cmd("tabnew")
+  local popup = require("codediff.ui.popup")
+  local floating = popup.is_status(session_config)
+  if floating then
+    local existing = lifecycle.get_session(vim.api.nvim_get_current_tabpage())
+    if existing then
+      if existing.popup then
+        if not lifecycle.close(existing.tabpage) then
+          return nil
+        end
+      else
+        vim.notify("Close the current CodeDiff session before opening status", vim.log.levels.WARN)
+        return nil
+      end
+    end
+    session_config.popup = popup.capture()
+  else
+    session_config.popup = nil
+    vim.cmd("tabnew")
+  end
   local tabpage = vim.api.nvim_get_current_tabpage()
-  local initial_buf = vim.api.nvim_get_current_buf()
+  local initial_buf = not floating and vim.api.nvim_get_current_buf() or nil
 
   local placeholder = is_panel_placeholder(session_config)
   local original_win, modified_win, original_info, modified_info
 
   if placeholder then
-    original_win, modified_win, original_info, modified_info = open_placeholder_panes(tabpage)
+    original_win, modified_win, original_info, modified_info = open_placeholder_panes(tabpage, floating)
   else
     original_win, modified_win, original_info, modified_info = open_diff_panes(session_config)
   end
 
   -- Clean up initial buffer
-  if vim.api.nvim_buf_is_valid(initial_buf) and initial_buf ~= original_info.bufnr and initial_buf ~= modified_info.bufnr then
+  if initial_buf and vim.api.nvim_buf_is_valid(initial_buf) and initial_buf ~= original_info.bufnr and initial_buf ~= modified_info.bufnr then
     pcall(vim.api.nvim_buf_delete, initial_buf, { force = true })
   end
 

@@ -145,6 +145,7 @@ function M.normalize_path(path)
 end
 
 function M.close_extra_tabs()
+  require("codediff.ui.lifecycle").cleanup_all()
   while vim.fn.tabpagenr("$") > 1 do
     vim.cmd("tabclose")
   end

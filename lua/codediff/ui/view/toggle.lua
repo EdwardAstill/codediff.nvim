@@ -46,6 +46,9 @@ function M.normalize_side_by_side_layout(tabpage)
   if not session then
     return false
   end
+  if session.popup then
+    return false
+  end
 
   local current_win = (session.modified_win and vim.api.nvim_win_is_valid(session.modified_win) and session.modified_win)
     or (session.original_win and vim.api.nvim_win_is_valid(session.original_win) and session.original_win)
@@ -91,6 +94,10 @@ function M.toggle(tabpage)
   tabpage = tabpage or vim.api.nvim_get_current_tabpage()
   local session = lifecycle.get_session(tabpage)
   if not session then
+    return false
+  end
+  if session.popup then
+    vim.notify("The status popup uses a fixed four-pane layout", vim.log.levels.INFO)
     return false
   end
 

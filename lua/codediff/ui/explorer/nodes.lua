@@ -288,7 +288,7 @@ end
 
 local function get_indent(node, data, explorer_config)
   local use_indent_markers = explorer_config.indent_markers ~= false
-  if explorer_config.view_mode == "tree" and data.indent_state then
+  if data.indent_state then
     return build_indent_markers(data.indent_state, use_indent_markers), use_indent_markers and "NeoTreeIndentMarker" or "Normal"
   end
   return string.rep("  ", node:get_depth() - 1), "Normal"
@@ -327,7 +327,7 @@ local function file_context(node, data, explorer_config)
   local indent, indent_hl = get_indent(node, data, explorer_config)
   local full_path = data.path or node.text
   local filename = full_path:match("([^/]+)$") or full_path
-  local directory = explorer_config.view_mode == "tree" and "" or full_path:sub(1, -(#filename + 1))
+  local directory = data.indent_state and "" or full_path:sub(1, -(#filename + 1))
   return {
     path = full_path,
     filename = filename,

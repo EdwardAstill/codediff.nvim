@@ -4,7 +4,7 @@
 
 This is Edward Astill's personal fork of [CodeDiff](https://github.com/esmuellert/codediff.nvim), focused on viewing diffs and staging changes in Neovim. It retains upstream's VSCode-style diffs, live refresh, history, and conflict resolution without agent integrations or agent development scaffolding.
 
-CodeDiff stays synchronized with a changing repository, so review can continue as the code evolves. From the same workspace, you can stage or discard changes, review branches and pull requests, browse history, and resolve merge conflicts.
+CodeDiff stays synchronized with a changing repository, so review can continue as the code evolves. From the same workspace, you can stage or unstage hunks, files, and folders, review branches and pull requests, browse history, and resolve merge conflicts.
 
 <div align="center">
 
@@ -16,7 +16,7 @@ https://github.com/user-attachments/assets/3c66a26d-5ff9-4dac-8035-a2f2b7bd2308
 
 - **Live review:** Diffs stay synchronized with repository changes while you edit.
 - **VSCode style diffs:** Review side-by-side or inline changes with line- and character-level highlighting.
-- **Git staging:** Inspect, stage, unstage, or discard files and hunks from one review workspace.
+- **Git staging:** Inspect, stage, and unstage hunks, files, or entire folders from one review workspace.
 - **Complete workflows:** Review local changes, staged changes, revisions, pull requests, and history.
 - **Focused navigation:** Move between files and hunks, fold unchanged code, and track moved blocks.
 - **Conflict resolution:** Resolve merge conflicts per block or across the whole file.
@@ -234,7 +234,7 @@ Both methods automatically place the library in the plugin root directory.
     -- Keymaps in diff view
     keymaps = {
       view = {
-        quit = "q",                    -- Close diff tab
+        quit = "q",                    -- Close diff workspace
         toggle_explorer = "<leader>b",  -- Toggle explorer visibility (explorer mode only)
         focus_explorer = "<leader>e",   -- Focus explorer panel (explorer mode only)
         next_hunk = "]c",   -- Jump to next change
@@ -243,9 +243,9 @@ Both methods automatically place the library in the plugin root directory.
         prev_file = "[f",   -- Previous file in explorer/history mode
         diff_get = "do",    -- Get change from other buffer (like vimdiff)
         diff_put = "dp",    -- Put change to other buffer (like vimdiff)
-        open_in_prev_tab = "gf", -- Open current buffer in previous tab (or create one before)
-        close_on_open_in_prev_tab = false, -- Close codediff tab after gf opens file in previous tab
-        toggle_stage = "-", -- Stage/unstage current file (works in explorer and diff buffers)
+        open_in_prev_tab = "gf", -- Open file outside diff; a popup returns to the originating editor
+        close_on_open_in_prev_tab = false, -- Close a revision tab after gf; popups always close
+        toggle_stage = "-", -- Stage/unstage selected file or folder
         toggle_staged_view = "gS", -- Swap between staged/unstaged view of current file (#352)
         stage_hunk = "<leader>hs",   -- Stage hunk under cursor to git index
         unstage_hunk = "<leader>hu", -- Unstage hunk under cursor from git index
@@ -416,7 +416,13 @@ Use `:CodeDiff` to review repository changes, pull requests, files, directories,
 
 #### Working Tree and Revisions
 
-Open an interactive file explorer showing changed files:
+`:CodeDiff` opens a floating workspace over the current editor: **Unstaged** above **Staged** on the left, **Before** in the middle, and **After** on the right. Each left pane has an independent file tree; folders include all their descendants.
+
+Use `Tab` / `Shift-Tab` to cycle the four panes, `Enter` to preview a file or expand a folder, and `-` to stage or unstage the selected file/folder. In a diff pane, `<leader>hs` stages the current hunk and `<leader>hu` unstages it. `S` / `U` in either tree stage / unstage everything.
+
+`q` closes the popup and restores the underlying editor; `gf` closes it and opens the selected file there. Closing preserves unsaved buffers. Restore/discard and diff-copy shortcuts are disabled in this popup. Conflict files add a Result pane below the diff pair.
+
+Explicit revision comparisons, history, and `--inline` retain their existing tab layouts:
 
 ```vim
 " Show repository status in the Explorer

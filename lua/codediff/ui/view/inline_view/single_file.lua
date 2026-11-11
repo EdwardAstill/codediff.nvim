@@ -70,9 +70,8 @@ function M.show_single_file(tabpage, file_path, opts)
   lifecycle.update_buffers(tabpage, orig_bufnr, mod_bufnr)
   lifecycle.update_paths(tabpage, original, modified)
   lifecycle.update_revisions(tabpage, original_revision, modified_revision)
-  lifecycle.update_diff_result(tabpage, { changes = {}, moves = {} })
   session.single_side = side
-  core.render_whole_file(file_bufnr, side)
+  lifecycle.update_diff_result(tabpage, core.render_whole_file(file_bufnr, side))
 
   local view_keymaps = require("codediff.ui.view.keymaps")
   view_keymaps.setup_all_keymaps(tabpage, orig_bufnr, mod_bufnr, session.panel ~= nil and session.panel.name == "explorer")

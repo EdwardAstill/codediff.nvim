@@ -111,10 +111,11 @@ end
 
 -- Stage a file (git add)
 -- git_root: absolute path to git repository root
--- rel_path: relative path from git root
+-- rel_path: relative path or list of paths from git root
 -- callback: function(err)
 function M.stage_file(git_root, rel_path, callback)
-  run_git_async({ "add", "--", rel_path }, { cwd = git_root }, function(err, _)
+  local args = vim.list_extend({ "--literal-pathspecs", "add", "-A", "--" }, type(rel_path) == "table" and rel_path or { rel_path })
+  run_git_async(args, { cwd = git_root }, function(err, _)
     if err then
       callback("Failed to stage file: " .. err)
     else
@@ -125,10 +126,11 @@ end
 
 -- Unstage a file (git reset HEAD)
 -- git_root: absolute path to git repository root
--- rel_path: relative path from git root
+-- rel_path: relative path or list of paths from git root
 -- callback: function(err)
 function M.unstage_file(git_root, rel_path, callback)
-  run_git_async({ "reset", "HEAD", "--", rel_path }, { cwd = git_root }, function(err, _)
+  local args = vim.list_extend({ "--literal-pathspecs", "reset", "--" }, type(rel_path) == "table" and rel_path or { rel_path })
+  run_git_async(args, { cwd = git_root }, function(err, _)
     if err then
       callback("Failed to unstage file: " .. err)
     else
@@ -154,7 +156,7 @@ end
 -- git_root: absolute path to git repository root
 -- callback: function(err)
 function M.unstage_all(git_root, callback)
-  run_git_async({ "reset", "HEAD" }, { cwd = git_root }, function(err, _)
+  run_git_async({ "reset" }, { cwd = git_root }, function(err, _)
     if err then
       callback("Failed to unstage all files: " .. err)
     else

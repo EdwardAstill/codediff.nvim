@@ -21,7 +21,7 @@ local show_real_file_buffer = helpers.show_real_file_buffer
 ---@param opts table
 ---@return boolean
 local function single_file_unchanged(session, opts)
-  if not session.single_pane then
+  if not session.single_pane and not session.popup then
     return false
   end
   if session.single_side ~= (opts.highlight ~= false and opts.keep or nil) then
@@ -29,7 +29,7 @@ local function single_file_unchanged(session, opts)
   end
   local keep_win = opts.keep == "original" and session.original_win or session.modified_win
   local other_win = opts.keep == "original" and session.modified_win or session.original_win
-  if other_win and vim.api.nvim_win_is_valid(other_win) then
+  if not session.popup and other_win and vim.api.nvim_win_is_valid(other_win) then
     return false
   end
   if not keep_win or not vim.api.nvim_win_is_valid(keep_win) then
@@ -66,7 +66,7 @@ local function show_single_file(tabpage, opts)
   end
 
   -- Mark single-pane BEFORE closing window (prevents cleanup trigger)
-  session.single_pane = true
+  session.single_pane = not session.popup or nil
 
   -- Leaving conflict mode: close the result window too, mirroring M.update.
   -- Without this the 3rd conflict pane survives under the single-file view, and
@@ -75,11 +75,14 @@ local function show_single_file(tabpage, opts)
   -- also works when 'hidden' is off; the buffer only becomes hidden, never
   -- unloaded, so in-progress merge edits are preserved.
   local _, old_result_win = lifecycle.get_result(tabpage)
+  lifecycle.set_result(tabpage, nil, nil)
   if old_result_win and vim.api.nvim_win_is_valid(old_result_win) then
+    if session.popup then
+      require("codediff.ui.popup").prepare_switch(old_result_win)
+    end
     vim.w[old_result_win].codediff_restore = nil
     pcall(vim.api.nvim_win_close, old_result_win, true)
   end
-  lifecycle.set_result(tabpage, nil, nil)
 
   -- Close the unused window
   local keep_win, close_win
@@ -103,10 +106,17 @@ local function show_single_file(tabpage, opts)
   -- the freshly-created virtual buffer with no window, wiping it before we can
   -- set it into keep_win — producing "Invalid buffer id" (#498).
   if keep_win and vim.api.nvim_win_is_valid(keep_win) then
+    if session.popup then
+      local popup = require("codediff.ui.popup")
+      popup.prepare_switch(keep_win)
+      if close_win and vim.api.nvim_win_is_valid(close_win) then
+        popup.prepare_switch(close_win)
+      end
+    end
     show_real_file_buffer(keep_win, opts.load_bufnr)
   end
 
-  if close_win and vim.api.nvim_win_is_valid(close_win) then
+  if not session.popup and close_win and vim.api.nvim_win_is_valid(close_win) then
     vim.w[close_win].codediff_restore = nil
     vim.api.nvim_win_close(close_win, true)
     close_win = nil
@@ -115,7 +125,9 @@ local function show_single_file(tabpage, opts)
   if keep_win and vim.api.nvim_win_is_valid(keep_win) then
     welcome_window.sync(keep_win)
 
-    if opts.keep == "original" then
+    if session.popup then
+      session.original_win, session.modified_win = orig_win, mod_win
+    elseif opts.keep == "original" then
       session.original_win = keep_win
       session.modified_win = nil
     else
@@ -126,6 +138,11 @@ local function show_single_file(tabpage, opts)
     -- Create a scratch buffer as placeholder for the empty side
     local empty_buf = vim.api.nvim_create_buf(false, true)
     vim.bo[empty_buf].buftype = "nofile"
+    if session.popup then
+      vim.bo[empty_buf].bufhidden = "wipe"
+      vim.api.nvim_win_set_buf(close_win, empty_buf)
+      welcome_window.sync(close_win)
+    end
 
     local orig_bufnr = opts.keep == "original" and opts.load_bufnr or empty_buf
     local mod_bufnr = opts.keep == "modified" and opts.load_bufnr or empty_buf
@@ -133,10 +150,11 @@ local function show_single_file(tabpage, opts)
     lifecycle.update_buffers(tabpage, orig_bufnr, mod_bufnr)
     lifecycle.update_paths(tabpage, path.make_ref(opts.original_path or "", session.git_root), path.make_ref(opts.modified_path or "", session.git_root))
     lifecycle.update_revisions(tabpage, opts.original_revision, opts.modified_revision)
-    lifecycle.update_diff_result(tabpage, { changes = {}, moves = {} })
     session.single_side = opts.highlight ~= false and opts.keep or nil
     if session.single_side then
-      core.render_whole_file(opts.load_bufnr, session.single_side)
+      lifecycle.update_diff_result(tabpage, core.render_whole_file(opts.load_bufnr, session.single_side))
+    else
+      lifecycle.update_diff_result(tabpage, { changes = {}, moves = {} })
     end
 
     local view_keymaps = require("codediff.ui.view.keymaps")
@@ -191,6 +209,7 @@ function M.show_deleted_file(tabpage, git_root, file_path, abs_path, group)
     rel_path = file_path,
     original_path = abs_path,
     original_revision = revision,
+    modified_revision = group == "staged" and ":0" or nil,
   })
 end
 
@@ -209,7 +228,7 @@ function M.show_added_virtual_file(tabpage, git_root, file_path, revision)
 end
 
 --- Show a deleted virtual file (status "D", two-revision mode) — original pane only
-function M.show_deleted_virtual_file(tabpage, git_root, file_path, revision)
+function M.show_deleted_virtual_file(tabpage, git_root, file_path, revision, modified_revision)
   show_single_file(tabpage, {
     keep = "original",
     load_bufnr = load_virtual_file(git_root, revision, file_path),
@@ -219,6 +238,7 @@ function M.show_deleted_virtual_file(tabpage, git_root, file_path, revision)
     rel_path = file_path,
     original_path = file_path,
     original_revision = revision,
+    modified_revision = modified_revision,
   })
 end
 

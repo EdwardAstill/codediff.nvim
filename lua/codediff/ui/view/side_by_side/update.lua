@@ -154,8 +154,12 @@ function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
   -- Handle result window when switching between conflict and non-conflict modes
   local old_result_bufnr, old_result_win = lifecycle.get_result(tabpage)
   if not session_config.conflict and old_result_win and vim.api.nvim_win_is_valid(old_result_win) then
-    vim.api.nvim_win_close(old_result_win, false)
+    if session.popup then
+      require("codediff.ui.popup").prepare_switch(old_result_win)
+    end
     lifecycle.set_result(tabpage, nil, nil)
+    vim.api.nvim_win_close(old_result_win, true)
+    layout.arrange(tabpage)
   end
 
   -- Restore second window if returning from single-pane mode
@@ -242,6 +246,9 @@ function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
             lifecycle.update_diff_result(tabpage, conflict_diffs.base_to_modified_diff)
             lifecycle.update_changedtick(tabpage, vim.api.nvim_buf_get_changedtick(original_info.bufnr), vim.api.nvim_buf_get_changedtick(modified_info.bufnr))
             local is_explorer_mode = session.panel and session.panel.name == "explorer"
+            if session.popup then
+              require("codediff.ui.popup").open_result(session)
+            end
             local success = setup_conflict_result_window(tabpage, session_config, original_win, modified_win, base_lines, conflict_diffs, true)
             if success then
               setup_all_keymaps(tabpage, original_info.bufnr, modified_info.bufnr, is_explorer_mode)
@@ -286,6 +293,11 @@ function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
 
   -- Wait for virtual content before rendering; real files are ready already.
   render_when_reloaded(tabpage, original_info, modified_info, wait_state, render_everything)
+  if session.popup then
+    local popup = require("codediff.ui.popup")
+    popup.prepare_switch(original_win)
+    popup.prepare_switch(modified_win)
+  end
   reload_side(original_win, original_info, original_is_virtual)
   reload_side(modified_win, modified_info, modified_is_virtual)
 

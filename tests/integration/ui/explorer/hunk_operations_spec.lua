@@ -98,15 +98,16 @@ end
 --- Returns tabpage, session, explorer.
 --- @param repo table  Repo helper from h.create_temp_git_repo()
 --- @param timeout_ms? number  (default 10000)
+--- @param revision? string Explicit revision mode keeps legacy non-popup actions.
 --- @return number tabpage
 --- @return table session
 --- @return table explorer
-local function open_codediff_and_wait(repo, timeout_ms)
+local function open_codediff_and_wait(repo, timeout_ms, revision)
   timeout_ms = timeout_ms or 10000
   vim.fn.chdir(repo.dir)
   -- Open a file so CodeDiff has context
   vim.cmd("edit " .. repo.path("file1.txt"))
-  vim.cmd("CodeDiff")
+  vim.cmd("CodeDiff" .. (revision and " " .. revision or ""))
 
   local lifecycle = require("codediff.ui.lifecycle")
   local tabpage
@@ -223,10 +224,7 @@ describe("Hunk operations (side-by-side)", function()
   end)
 
   after_each(function()
-    pcall(function()
-      vim.cmd("tabnew")
-      vim.cmd("tabonly")
-    end)
+    h.close_extra_tabs()
     vim.fn.chdir(original_cwd)
     vim.o.autoread = original_autoread
     vim.wait(200)
@@ -380,7 +378,7 @@ describe("Hunk operations (side-by-side)", function()
   it("discard_hunk refreshes the visible buffer when autoread is disabled", function()
     vim.o.autoread = false
     repo = create_two_hunk_repo()
-    local tabpage, session, explorer = open_codediff_and_wait(repo)
+    local tabpage, session, explorer = open_codediff_and_wait(repo, nil, "HEAD")
     local lifecycle = require("codediff.ui.lifecycle")
 
     -- Wait for 2 hunks
@@ -446,7 +444,7 @@ describe("Hunk operations (side-by-side)", function()
     changed[20] = "MODIFIED line 20"
     repo.write_file("file1.txt", changed)
 
-    local tabpage = open_codediff_and_wait(repo)
+    local tabpage = open_codediff_and_wait(repo, nil, "HEAD")
     local lifecycle = require("codediff.ui.lifecycle")
     assert.is_true(wait_for_hunks(tabpage, 2, 8000), "Should start with 2 hunks")
 
@@ -496,7 +494,7 @@ describe("Hunk operations (side-by-side)", function()
     repo.git('commit -m "initial"')
     repo.write_file("file1.txt", { "line 1", "line 4" })
 
-    local tabpage = open_codediff_and_wait(repo)
+    local tabpage = open_codediff_and_wait(repo, nil, "HEAD")
     local lifecycle = require("codediff.ui.lifecycle")
     assert.is_true(wait_for_hunks(tabpage, 1, 8000), "Should start with one deletion hunk")
 
@@ -536,7 +534,7 @@ describe("Hunk operations (side-by-side)", function()
     repo.git('commit -m "initial"')
     repo.write_file("file1.txt", { "line 1", "inserted line 2", "inserted line 3", "line 4" })
 
-    local tabpage = open_codediff_and_wait(repo)
+    local tabpage = open_codediff_and_wait(repo, nil, "HEAD")
     local lifecycle = require("codediff.ui.lifecycle")
     assert.is_true(wait_for_hunks(tabpage, 1, 8000), "Should start with one insertion hunk")
 
@@ -585,10 +583,7 @@ describe("Hunk operations (inline)", function()
   end)
 
   after_each(function()
-    pcall(function()
-      vim.cmd("tabnew")
-      vim.cmd("tabonly")
-    end)
+    h.close_extra_tabs()
     -- Restore default layout for other test suites
     require("codediff").setup({ diff = { layout = "side-by-side" } })
     vim.fn.chdir(original_cwd)
@@ -745,7 +740,7 @@ describe("Hunk operations (inline)", function()
     require("codediff").setup({ diff = { layout = "side-by-side" } })
 
     repo = create_two_hunk_repo()
-    local tabpage, session, explorer = open_codediff_and_wait(repo)
+    local tabpage, session, explorer = open_codediff_and_wait(repo, nil, "HEAD")
     local lifecycle = require("codediff.ui.lifecycle")
 
     -- Wait for 2 hunks in side-by-side
@@ -788,10 +783,7 @@ describe("Explorer hunk/staging actions", function()
   end)
 
   after_each(function()
-    pcall(function()
-      vim.cmd("tabnew")
-      vim.cmd("tabonly")
-    end)
+    h.close_extra_tabs()
     vim.fn.chdir(original_cwd)
     vim.wait(200)
     if repo then
@@ -902,10 +894,7 @@ describe("Sequential hunk operations", function()
   end)
 
   after_each(function()
-    pcall(function()
-      vim.cmd("tabnew")
-      vim.cmd("tabonly")
-    end)
+    h.close_extra_tabs()
     vim.fn.chdir(original_cwd)
     vim.wait(200)
     if repo then

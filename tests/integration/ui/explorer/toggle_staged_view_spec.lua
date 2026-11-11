@@ -65,10 +65,15 @@ describe("toggle_staged_view (issue #352)", function()
       return explorer.data.current_file_path == "both.txt" and explorer.data.current_file_group == "unstaged"
     end, 50), "initial selection is both.txt/unstaged")
 
+    vim.api.nvim_set_current_win(explorer.winid)
     local ok = actions.toggle_staged_view(explorer)
     assert.is_true(ok, "toggle succeeds when file exists in both groups")
     assert.equals("both.txt", explorer.data.current_file_path)
     assert.equals("staged", explorer.data.current_file_group)
+    assert.equals(explorer.panes[2].winid, vim.api.nvim_get_current_win())
+    local selected = explorer.panes[2].tree:get_node()
+    assert.equals("both.txt", selected.data.path)
+    assert.equals("staged", selected.data.group)
   end)
 
   it("swaps back to unstaged on a second toggle", function()

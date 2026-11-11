@@ -11,7 +11,6 @@ local M = {}
 -- @param explorer: explorer object with tree, split, git_root, on_file_select, etc.
 function M.setup(explorer)
   local tree = explorer.tree
-  local split = explorer.split
   local git_root = explorer.data.git_root
 
   local map_options = { noremap = true, silent = true, nowait = true }
@@ -22,7 +21,7 @@ function M.setup(explorer)
   -- Required lazily to avoid a module cycle through the lifecycle package.
   local lifecycle = require("codediff.ui.lifecycle")
   local function panel_map(lhs, rhs, desc)
-    lifecycle.set_buf_keymap(explorer.tabpage, split.bufnr, "n", lhs, rhs, vim.tbl_extend("force", map_options, { desc = desc }), { suspendable = false })
+    lifecycle.set_buf_keymap(explorer.tabpage, explorer.bufnr, "n", lhs, rhs, vim.tbl_extend("force", map_options, { desc = desc }), { suspendable = false })
   end
 
   -- Toggle expand/collapse or select file
@@ -85,8 +84,8 @@ function M.setup(explorer)
         return
       end
 
-      local full_path = node.data.path
-      local display_text = git_root .. "/" .. full_path
+      local full_path = node.data.dir_path or node.data.path
+      local display_text = (git_root and git_root .. "/" or "") .. full_path
 
       -- Create hover buffer
       local hover_buf = vim.api.nvim_create_buf(false, true)
@@ -120,7 +119,7 @@ function M.setup(explorer)
 
       -- Auto-close on cursor move or buffer leave
       vim.api.nvim_create_autocmd({ "CursorMoved", "BufLeave" }, {
-        buffer = split.bufnr,
+        buffer = explorer.bufnr,
         once = true,
         callback = function()
           if hover_win and vim.api.nvim_win_is_valid(hover_win) then
@@ -161,7 +160,7 @@ function M.setup(explorer)
   end
 
   -- Restore/discard changes (X key)
-  if explorer_keymaps.restore then
+  if explorer_keymaps.restore and not (explorer.root or explorer).panes then
     panel_map(explorer_keymaps.restore, function()
       actions_module.restore_entry(explorer, tree)
     end, "Restore/discard changes")
@@ -185,7 +184,7 @@ function M.setup(explorer)
   tree_utils.setup_fold_keymaps({
     tree = tree,
     keymaps = explorer_keymaps,
-    bufnr = split.bufnr,
+    bufnr = explorer.bufnr,
     tabpage = explorer.tabpage,
   })
 

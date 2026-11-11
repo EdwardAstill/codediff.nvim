@@ -23,6 +23,32 @@ local function get_explorer_target_file(explorer, session)
   return vim.fs.joinpath(git_root, data.path)
 end
 
+function M.cycle(ctx, direction)
+  local session = lifecycle.get_session(ctx.tabpage)
+  if not session then
+    return
+  end
+  local explorer = lifecycle.get_panel_view(ctx.tabpage)
+  local windows = {}
+  for _, pane in ipairs(explorer and (explorer.panes or { explorer }) or {}) do
+    if pane.winid and vim.api.nvim_win_is_valid(pane.winid) then
+      windows[#windows + 1] = pane.winid
+    end
+  end
+  for _, win in ipairs({ session.original_win, session.modified_win, session.result_win }) do
+    if win and vim.api.nvim_win_is_valid(win) then
+      windows[#windows + 1] = win
+    end
+  end
+  local current = vim.api.nvim_get_current_win()
+  for index, win in ipairs(windows) do
+    if win == current then
+      vim.api.nvim_set_current_win(windows[(index - 1 + direction) % #windows + 1])
+      return
+    end
+  end
+end
+
 function M.toggle_explorer(ctx)
   local explorer_obj = lifecycle.get_panel_view(ctx.tabpage)
   if not explorer_obj then
@@ -39,14 +65,18 @@ function M.focus_explorer(ctx)
     vim.notify("No explorer found for this tab", vim.log.levels.WARN)
     return
   end
-  local split = explorer_obj.split
-  if not split or not split.winid or not vim.api.nvim_win_is_valid(split.winid) then
-    -- Explorer is hidden, show it first then focus
-    local explorer = require("codediff.ui.explorer")
-    explorer.toggle_visibility(explorer_obj)
+  if explorer_obj.is_hidden then
+    require("codediff.ui.explorer").toggle_visibility(explorer_obj)
   end
-  if split and split.winid and vim.api.nvim_win_is_valid(split.winid) then
-    vim.api.nvim_set_current_win(split.winid)
+  local target = explorer_obj
+  for _, pane in ipairs(explorer_obj.panes or { explorer_obj }) do
+    if pane.group == explorer_obj.data.current_file_group then
+      target = pane
+      break
+    end
+  end
+  if target.winid and vim.api.nvim_win_is_valid(target.winid) then
+    vim.api.nvim_set_current_win(target.winid)
   end
 end
 
@@ -65,7 +95,13 @@ function M.open_in_prev_tab(ctx)
   end
 
   local explorer = lifecycle.get_panel_view(ctx.tabpage)
-  local is_explorer_buf = explorer and explorer.bufnr and current_buf == explorer.bufnr
+  local is_explorer_buf = false
+  for _, pane in ipairs(explorer and (explorer.panes or { explorer }) or {}) do
+    if pane.bufnr == current_buf then
+      explorer, is_explorer_buf = pane, true
+      break
+    end
+  end
 
   -- Only operate on diff and explorer buffers; ignore history/result silently
   if not side and not is_explorer_buf then
@@ -110,7 +146,12 @@ function M.open_in_prev_tab(ctx)
   end
 
   local target_tab
-  if current_index and current_index > 1 then
+  if session.popup then
+    if not lifecycle.close(ctx.tabpage) then
+      return
+    end
+    target_tab = current_tab
+  elseif current_index and current_index > 1 then
     target_tab = tabs[current_index - 1]
   else
     vim.cmd("tabnew")
@@ -144,12 +185,8 @@ function M.open_in_prev_tab(ctx)
   end
 
   -- Optionally close codediff after navigating to file
-  if config.options.keymaps.view.close_on_open_in_prev_tab then
-    -- Switch back to diff tab and close it
-    if vim.api.nvim_tabpage_is_valid(current_tab) then
-      vim.api.nvim_set_current_tabpage(current_tab)
-      vim.cmd("tabclose")
-    end
+  if config.options.keymaps.view.close_on_open_in_prev_tab and not session.popup then
+    lifecycle.close(current_tab)
   end
 end
 

@@ -9,6 +9,9 @@ local side_by_side = require("codediff.ui.view.side_by_side")
 local lifecycle_initialized = false
 
 local function get_layout(session_config, tabpage)
+  if session_config and require("codediff.ui.popup").is_status(session_config) then
+    return "side-by-side"
+  end
   if session_config and session_config.conflict then
     return "side-by-side"
   end
@@ -33,6 +36,7 @@ end
 ---@field conflict boolean? For merge conflict mode: render both sides against base
 ---@field layout "side-by-side"|"inline"? Optional per-invocation layout override
 ---@field exit_on_close boolean? Exit Neovim when this session closes
+---@field popup table? Native current-tab workspace and saved return window/view
 ---@field line_range table? For history line-range mode: { start_line, end_line }
 
 ---@param session_config SessionConfig Session configuration
@@ -95,11 +99,15 @@ function M.show(tabpage, session_config, jump)
       side = side,
     })
   elseif revision and revision ~= "WORKING" then
-    local show = side == "original" and side_by_side.show_deleted_virtual_file or side_by_side.show_added_virtual_file
-    show(tabpage, session_config.git_root, ref.relative, revision)
+    if side == "original" then
+      side_by_side.show_deleted_virtual_file(tabpage, session_config.git_root, ref.relative, revision, session_config.modified_revision)
+    else
+      side_by_side.show_added_virtual_file(tabpage, session_config.git_root, ref.relative, revision)
+    end
   else
     side_by_side.show_untracked_file(tabpage, ref.absolute)
   end
+  lifecycle.update_revisions(tabpage, session_config.original_revision, session_config.modified_revision)
   return true
 end
 
@@ -116,7 +124,7 @@ function M.show_welcome(tabpage)
   end
   local width, height = vim.api.nvim_win_get_width(win), vim.api.nvim_win_get_height(win)
   local original = session.original_win
-  if session.layout ~= "inline" and original and vim.api.nvim_win_is_valid(original) then
+  if not session.popup and session.layout ~= "inline" and original and vim.api.nvim_win_is_valid(original) then
     width, height = width + vim.api.nvim_win_get_width(original) + 1, vim.api.nvim_win_get_height(original)
   end
   local buf = welcome.create_buffer(width, height)

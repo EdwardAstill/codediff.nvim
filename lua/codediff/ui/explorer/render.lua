@@ -8,114 +8,112 @@ local nodes_module = require("codediff.ui.explorer.nodes")
 local tree_module = require("codediff.ui.explorer.tree")
 local keymaps_module = require("codediff.ui.explorer.keymaps")
 
-local function expand_directories(tree, node)
-  for _, child_id in ipairs(node:get_child_ids() or {}) do
-    local child = tree:get_node(child_id)
-    if child and child.data and child.data.type == "directory" then
-      child:expand()
-      expand_directories(tree, child)
-    end
-  end
-end
-
 function M.create(data, tabpage, width)
   local options = config.options.explorer or {}
+  local session = lifecycle.get_session(tabpage)
+  local popup = session and session.popup
   local position = options.position or "left"
   local size = position == "bottom" and (options.height or 15) or (width or options.width or 40)
-  local text_width = position == "bottom" and vim.o.columns or size
-  local split = Split({
-    relative = "editor",
-    position = position,
-    size = size,
-    buf_options = { modifiable = false, readonly = true, filetype = "codediff-explorer" },
-    win_options = {
-      number = false,
-      relativenumber = false,
-      cursorline = true,
-      wrap = false,
-      signcolumn = "no",
-      foldcolumn = "0",
-      statuscolumn = "",
-      spell = false,
-      winfixwidth = true,
-      winfixheight = true,
-    },
-  })
-  split:mount()
-  pcall(vim.api.nvim_buf_set_name, split.bufnr, "CodeDiff Explorer [" .. tabpage .. "]")
-  if options.hidden then
-    split:hide()
-  end
-
+  local win_options = {
+    number = false, relativenumber = false, cursorline = true, wrap = false,
+    signcolumn = "no", foldcolumn = "0", statuscolumn = "", spell = false,
+    winfixwidth = true, winfixheight = true, scrollbind = false, cursorbind = false,
+  }
   local explorer = {
     data = data,
     tabpage = tabpage,
-    split = split,
-    bufnr = split.bufnr,
-    winid = split.winid,
     is_hidden = options.hidden,
     visible_groups = vim.deepcopy(options.visible_groups or { staged = true, unstaged = true, conflicts = true }),
   }
-  local tree_data = tree_module.create_tree_data(data.status_result, data.git_root, data.base_revision, not data.git_root, explorer.visible_groups)
-  local tree = Tree({
-    bufnr = split.bufnr,
-    nodes = tree_data,
-    prepare_node = function(node)
-      local current_width = split.winid and vim.api.nvim_win_is_valid(split.winid) and vim.api.nvim_win_get_width(split.winid) or text_width
-      local selected = explorer.data.current_selection or {}
-      return nodes_module.prepare_node(node, current_width, selected.path, selected.group)
-    end,
-  })
-  explorer.tree = tree
-  for _, node in ipairs(tree_data) do
-    if node.data and node.data.type == "group" then
-      node:expand()
+  explorer.on_file_select = function(file, opts)
+    return require("codediff.ui.refresh").select(tabpage, file, opts)
+  end
+  if popup then
+    explorer.group = "unstaged"
+    explorer.view_mode = "tree"
+    explorer.panes = { explorer, {
+      root = explorer, data = data, tabpage = tabpage, group = "staged", view_mode = "tree",
+      visible_groups = explorer.visible_groups, on_file_select = explorer.on_file_select,
+    } }
+  end
+
+  for _, pane in ipairs(explorer.panes or { explorer }) do
+    if popup then
+      pane.bufnr = vim.api.nvim_create_buf(false, true)
+      vim.bo[pane.bufnr].bufhidden = "hide"
+      vim.bo[pane.bufnr].filetype = "codediff-explorer"
+      vim.bo[pane.bufnr].modifiable = false
+      vim.bo[pane.bufnr].readonly = true
+      if not explorer.is_hidden then
+        pane.winid = vim.api.nvim_open_win(pane.bufnr, false, require("codediff.ui.popup").geometry()[pane.group])
+        for name, value in pairs(win_options) do
+          vim.wo[pane.winid][name] = value
+        end
+      end
+    else
+      pane.split = Split({
+        relative = "editor", position = position, size = size,
+        buf_options = { modifiable = false, readonly = true, filetype = "codediff-explorer" },
+        win_options = win_options,
+      })
+      pane.split:mount()
+      if options.hidden then
+        pane.split:hide()
+      end
+      pane.bufnr, pane.winid = pane.split.bufnr, pane.split.winid
     end
-    if options.view_mode == "tree" then
-      expand_directories(tree, node)
+    pcall(vim.api.nvim_buf_set_name, pane.bufnr, "CodeDiff Explorer " .. (pane.group or "") .. " [" .. tabpage .. "]")
+    local tree_data = tree_module.pane_data(pane)
+    pane.tree = Tree({
+      bufnr = pane.bufnr,
+      nodes = tree_data,
+      prepare_node = function(node)
+        local current_width = pane.winid and vim.api.nvim_win_is_valid(pane.winid) and vim.api.nvim_win_get_width(pane.winid) or size
+        local selected = pane.data.current_selection or {}
+        return nodes_module.prepare_node(node, current_width, selected.path, selected.group)
+      end,
+    })
+    for _, node in ipairs(tree_data) do
+      if popup or options.view_mode == "tree" then
+        node:expand_recursively()
+      else
+        node:expand()
+      end
+    end
+    pane.tree:render()
+    keymaps_module.setup(pane)
+
+    if options.auto_open_on_cursor then
+      for _, key in ipairs({ "j", "k", "<Down>", "<Up>" }) do
+        lifecycle.set_buf_keymap(tabpage, pane.bufnr, "n", key, function()
+          vim.cmd("normal! " .. (key == "<Down>" and "j" or key == "<Up>" and "k" or key))
+          local node = pane.tree:get_node()
+          if not node or not node.data or node.data.type then
+            return
+          end
+          local selected = pane.data.current_selection or {}
+          if selected.path ~= node.data.path or selected.group ~= node.data.group then
+            pane.on_file_select(node.data)
+          end
+        end, { silent = true, desc = "codediff: move and auto-open file" }, { suspendable = false })
+      end
     end
   end
-  tree:render()
 
   explorer.on_data = function(value, changes)
-    explorer.data = value
-    if not vim.api.nvim_buf_is_valid(explorer.bufnr) then
-      return
+    for _, pane in ipairs(explorer.panes or { explorer }) do
+      pane.data = value
     end
     if changes.list then
       tree_module.rebuild(explorer)
     elseif changes.selection and not explorer.is_hidden then
-      tree:render()
-    end
-  end
-  explorer.on_file_select = function(file, opts)
-    return require("codediff.ui.refresh").select(tabpage, file, opts)
-  end
-  keymaps_module.setup(explorer)
-
-  if options.auto_open_on_cursor then
-    local function open_under_cursor()
-      if not vim.api.nvim_buf_is_valid(split.bufnr) then
-        return
+      for _, pane in ipairs(explorer.panes or { explorer }) do
+        pane.tree:render()
       end
-      local node = tree:get_node()
-      if not node or not node.data or node.data.type == "group" or node.data.type == "directory" then
-        return
-      end
-      local selected = explorer.data.current_selection or {}
-      if selected.path ~= node.data.path or selected.group ~= node.data.group then
-        explorer.on_file_select(node.data)
-      end
-    end
-    for _, key in ipairs({ "j", "k", "<Down>", "<Up>" }) do
-      lifecycle.set_buf_keymap(tabpage, split.bufnr, "n", key, function()
-        vim.cmd("normal! " .. (key == "<Down>" and "j" or key == "<Up>" and "k" or key))
-        open_under_cursor()
-      end, { silent = true, desc = "codediff: move and auto-open file" }, { suspendable = false })
     end
   end
 
-  local files = tree_module.get_all_files(tree)
+  local files = tree_module.get_pane_files(explorer)
   local initial_file = files[1]
   if data.focus_file then
     for _, file in ipairs(files) do
@@ -130,19 +128,20 @@ function M.create(data, tabpage, width)
       if lifecycle.get_panel_view(tabpage) ~= explorer then
         return
       end
-      if explorer.winid and vim.api.nvim_win_is_valid(explorer.winid) and initial_file.node._line then
-        vim.api.nvim_win_set_cursor(explorer.winid, { initial_file.node._line, 0 })
+      local pane = initial_file.pane
+      if pane.winid and vim.api.nvim_win_is_valid(pane.winid) and initial_file.node._line then
+        vim.api.nvim_win_set_cursor(pane.winid, { initial_file.node._line, 0 })
       end
       explorer.on_file_select(initial_file.data)
     end)
   end
 
   vim.api.nvim_create_autocmd("WinResized", {
+    group = vim.api.nvim_create_augroup("codediff_lifecycle_tab_" .. tabpage, { clear = false }),
     callback = function()
-      for _, win in ipairs(vim.v.event.windows or {}) do
-        if win == explorer.winid and vim.api.nvim_win_is_valid(win) then
-          tree:render()
-          break
+      for _, pane in ipairs(explorer.panes or { explorer }) do
+        if pane.winid and vim.api.nvim_win_is_valid(pane.winid) then
+          pane.tree:render()
         end
       end
     end,

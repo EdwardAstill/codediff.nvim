@@ -306,12 +306,16 @@ function M.panel_cursor(screen, text, group)
     [[
     local text, group = ...
     local panel = refresh_session().panel.view
-    vim.api.nvim_set_current_win(panel.winid)
-    for row, line in ipairs(vim.api.nvim_buf_get_lines(panel.bufnr, 0, -1, false)) do
-      local node = panel.tree:get_node(row)
-      if line:find(text, 1, true) and (not group or node and node.data and node.data.group == group) then
-        vim.api.nvim_win_set_cursor(panel.winid, { row, 0 })
-        return
+    for _, pane in ipairs(panel.panes or { panel }) do
+      if pane.winid and vim.api.nvim_win_is_valid(pane.winid) then
+        for row, line in ipairs(vim.api.nvim_buf_get_lines(pane.bufnr, 0, -1, false)) do
+          local node = pane.tree:get_node(row)
+          if line:find(text, 1, true) and (not group or node and node.data and node.data.group == group) then
+            vim.api.nvim_set_current_win(pane.winid)
+            vim.api.nvim_win_set_cursor(pane.winid, { row, 0 })
+            return
+          end
+        end
       end
     end
     error('entry is absent from the rendered panel: ' .. text)
@@ -407,18 +411,22 @@ function M.grid_contains(screen, text)
 end
 
 function M.panel_contains(screen, text)
-  local rect = screen:exec([[
+  local rectangles = screen:exec([[
     local panel = refresh_session().panel.view
-    if panel.is_hidden or not panel.winid or not vim.api.nvim_win_is_valid(panel.winid) then return nil end
-    local p = vim.api.nvim_win_get_position(panel.winid)
-    return { p[1] + 1, p[2] + 1, vim.api.nvim_win_get_height(panel.winid), vim.api.nvim_win_get_width(panel.winid) }
+    local rectangles = {}
+    for _, pane in ipairs(panel.panes or { panel }) do
+      if not pane.is_hidden and pane.winid and vim.api.nvim_win_is_valid(pane.winid) then
+        local p = vim.api.nvim_win_get_position(pane.winid)
+        rectangles[#rectangles + 1] = { p[1] + 1, p[2] + 1, vim.api.nvim_win_get_height(pane.winid), vim.api.nvim_win_get_width(pane.winid) }
+      end
+    end
+    return rectangles
   ]])
-  if not rect then
-    return false
-  end
-  for row = rect[1], rect[1] + rect[3] - 1 do
-    if screen:text(row, rect[2], rect[4]):find(text, 1, true) then
-      return true
+  for _, rect in ipairs(rectangles) do
+    for row = rect[1], rect[1] + rect[3] - 1 do
+      if screen:text(row, rect[2], rect[4]):find(text, 1, true) then
+        return true
+      end
     end
   end
   return false

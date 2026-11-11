@@ -25,11 +25,11 @@ function M.toggle_stage(ctx)
   end
 
   -- Case 1: Cursor in explorer buffer
-  if explorer.bufnr and current_buf == explorer.bufnr then
-    -- Delegate to explorer action (handles files and directories)
-    local explorer_module = require("codediff.ui.explorer")
-    explorer_module.toggle_stage_entry(explorer, explorer.tree)
-    return
+  for _, pane in ipairs(explorer.panes or { explorer }) do
+    if current_buf == pane.bufnr then
+      require("codediff.ui.explorer").toggle_stage_entry(pane, pane.tree)
+      return
+    end
   end
 
   -- Case 2: Cursor in diff buffers (original or modified)
@@ -50,7 +50,8 @@ function M.toggle_stage(ctx)
     end
 
     local explorer_module = require("codediff.ui.explorer")
-    explorer_module.toggle_stage_file(explorer.data.git_root, file_path, group)
+    local selection = explorer.data.current_selection or {}
+    explorer_module.toggle_stage_file(explorer.data.git_root, file_path, group, selection.status == "R" and selection.old_path or nil)
     return
   end
 

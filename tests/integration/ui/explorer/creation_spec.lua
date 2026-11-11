@@ -56,7 +56,7 @@ local function open_explorer(temp_dir, focus_file)
   return ready, tabpage, explorer
 end
 
-local function open_initial_explorer(temp_dir, view_mode, ignore_patterns)
+local function open_initial_explorer(temp_dir, view_mode, ignore_patterns, revision)
   local lifecycle = require("codediff.ui.lifecycle")
   vim.wait(200)
   lifecycle.cleanup_all()
@@ -70,7 +70,7 @@ local function open_initial_explorer(temp_dir, view_mode, ignore_patterns)
 
   vim.fn.writefile({ "modified nested" }, temp_dir .. "/nested/deep.txt")
   vim.cmd("enew")
-  vim.cmd("CodeDiff")
+  vim.cmd("CodeDiff" .. (revision and " " .. revision or ""))
 
   local explorer, session
   local ready = vim.wait(6000, function()
@@ -282,143 +282,28 @@ describe("Explorer Mode", function()
     h.git_cmd(temp_dir, "merge --abort")
   end)
 
-  -- Test 3: Explorer creates proper window layout
-  it("Creates correct window layout", function()
-    local initial_tabs = vim.fn.tabpagenr('$')
-    
-    -- Open explorer
-    vim.cmd("edit " .. temp_dir .. "/file1.txt")
-    vim.cmd("CodeDiff")
-    
-    -- Wait for async operations
-    vim.wait(3000, function()
-      return vim.fn.tabpagenr('$') > initial_tabs
-    end)
-    
-    -- Should create new tab
-    assert.is_true(vim.fn.tabpagenr('$') > initial_tabs, "Should create new tab")
-    
-    -- Should have 3 windows (explorer + 2 diff panes)
-    local wincount = vim.fn.winnr('$')
-    assert.equal(3, wincount, "Should have 3 windows")
-    
-    -- Check for explorer window
-    local has_explorer = false
-    for i = 1, wincount do
-      local winid = vim.fn.win_getid(i)
-      local bufnr = vim.api.nvim_win_get_buf(winid)
-      if vim.bo[bufnr].filetype == "codediff-explorer" then
-        has_explorer = true
-        break
-      end
-    end
-    assert.is_true(has_explorer, "Should have explorer window")
-  end)
 
-  -- Test 4: Window widths are properly distributed
-  it("Distributes window widths correctly", function()
-    vim.o.columns = 160  -- Set known terminal width
-    
+  it("keeps staged and unstaged files in their respective panes", function()
     vim.cmd("edit " .. temp_dir .. "/file1.txt")
     vim.cmd("CodeDiff")
-    
-    -- Wait longer and check for explorer specifically
-    local has_explorer = false
-    vim.wait(5000, function()
-      if vim.fn.winnr('$') ~= 3 then return false end
-      for i = 1, vim.fn.winnr('$') do
-        local winid = vim.fn.win_getid(i)
-        local bufnr = vim.api.nvim_win_get_buf(winid)
-        if vim.bo[bufnr].filetype == "codediff-explorer" then
-          has_explorer = true
-          return true
-        end
-      end
-      return false
-    end)
-    
-    if not has_explorer then
-      pending("Explorer not created in time")
-      return
+    local explorer
+    assert.is_true(vim.wait(5000, function()
+      explorer = require("codediff.ui.lifecycle").get_panel_view(vim.api.nvim_get_current_tabpage())
+      return explorer and explorer.panes and #explorer.panes == 2
+    end))
+    local unstaged = table.concat(vim.api.nvim_buf_get_lines(explorer.panes[1].bufnr, 0, -1, false), "\n")
+    local staged = table.concat(vim.api.nvim_buf_get_lines(explorer.panes[2].bufnr, 0, -1, false), "\n")
+    for _, name in ipairs({ "file1.txt", "file3.txt" }) do
+      assert.is_not_nil(unstaged:find(name, 1, true))
+      assert.is_nil(staged:find(name, 1, true))
     end
-    
-    local explorer_width = nil
-    local diff_widths = {}
-    
-    for i = 1, vim.fn.winnr('$') do
-      local winid = vim.fn.win_getid(i)
-      local bufnr = vim.api.nvim_win_get_buf(winid)
-      local width = vim.api.nvim_win_get_width(winid)
-      
-      if vim.bo[bufnr].filetype == "codediff-explorer" then
-        explorer_width = width
-      elseif vim.bo[bufnr].filetype ~= "" then
-        table.insert(diff_widths, width)
-      end
-    end
-    
-    -- Explorer should be 20-35 columns
-    assert.is_not_nil(explorer_width, "Explorer should have width")
-    assert.is_true(explorer_width >= 15 and explorer_width <= 40, 
-      "Explorer width should be reasonable (got " .. tostring(explorer_width) .. ")")
-    
-    -- Diff panes should be roughly equal
-    if #diff_widths == 2 then
-      local diff = math.abs(diff_widths[1] - diff_widths[2])
-      assert.is_true(diff <= 5, "Diff panes should have nearly equal width (diff: " .. diff .. ")")
-    end
-  end)
-
-  -- Test 5: Explorer shows correct content structure
-  it("Shows correct explorer content structure", function()
-    vim.cmd("edit " .. temp_dir .. "/file1.txt")
-    vim.cmd("CodeDiff")
-    
-    -- Wait for explorer to be created
-    local explorer_buf = nil
-    vim.wait(5000, function()
-      for i = 1, vim.fn.winnr('$') do
-        local winid = vim.fn.win_getid(i)
-        local bufnr = vim.api.nvim_win_get_buf(winid)
-        if vim.bo[bufnr].filetype == "codediff-explorer" then
-          explorer_buf = bufnr
-          return true
-        end
-      end
-      return false
-    end)
-    
-    if not explorer_buf then
-      pending("Explorer buffer not created in time")
-      return
-    end
-    
-    local lines = vim.api.nvim_buf_get_lines(explorer_buf, 0, -1, false)
-    
-    -- Should have group headers
-    local has_changes_group = false
-    local has_staged_group = false
-    local has_file_count = false
-    local has_status_symbol = false
-    
-    for _, line in ipairs(lines) do
-      if line:match("Changes") then has_changes_group = true end
-      if line:match("Staged") then has_staged_group = true end
-      if line:match("%(%d+%)") then has_file_count = true end
-      if line:match("[MAD]%s*$") or line:match("??%s*$") then 
-        has_status_symbol = true 
-      end
-    end
-    
-    assert.is_true(has_changes_group, "Should show Changes group")
-    assert.is_true(has_staged_group, "Should show Staged Changes group")
-    assert.is_true(has_file_count, "Should show file counts")
-    assert.is_true(has_status_symbol, "Should show status symbols")
+    assert.is_not_nil(staged:find("file2.txt", 1, true))
+    assert.is_nil(unstaged:find("file2.txt", 1, true))
   end)
 
   -- Test 6: First file is auto-selected and displayed
-  it("Selects the first visible file in list view", function()
-    local explorer, session = open_initial_explorer(temp_dir, "list")
+  it("selects the first visible file in a revision explorer's list view", function()
+    local explorer, session = open_initial_explorer(temp_dir, "list", nil, "HEAD")
     assert_first_visible_file_selected(explorer, session, "file1.txt")
   end)
 
@@ -433,18 +318,16 @@ describe("Explorer Mode", function()
     -- config, so flipping it never changes git status, and the deep_equal skip
     -- fired before the tree got rebuilt. Fix: toggle_view_mode now uses
     -- rebuild_from_cache (like toggle_group) instead of the async refresh path.
-    local explorer = open_initial_explorer(temp_dir, "list")
+    local explorer = open_initial_explorer(temp_dir, "tree")
     local before_lines = vim.api.nvim_buf_get_lines(explorer.bufnr, 0, -1, false)
-    local before_mode = config.options.explorer.view_mode
 
     require("codediff.ui.explorer.actions").toggle_view_mode(explorer)
     vim.wait(200)
 
     local after_lines = vim.api.nvim_buf_get_lines(explorer.bufnr, 0, -1, false)
-    local after_mode = config.options.explorer.view_mode
-
-    assert.equals("list", before_mode)
-    assert.equals("tree", after_mode)
+    for _, pane in ipairs(explorer.panes) do
+      assert.equals("list", pane.view_mode)
+    end
     assert.is_false(
       vim.deep_equal(before_lines, after_lines),
       "Explorer buffer must re-render when view_mode flips (bug: skip check swallowed the rebuild)"
@@ -452,32 +335,10 @@ describe("Explorer Mode", function()
   end)
 
   it("Does not select files excluded from the explorer", function()
-    local explorer, session = open_initial_explorer(temp_dir, "list", { "file1.txt", "file3.txt" })
+    local explorer, session = open_initial_explorer(temp_dir, "tree", { "file1.txt", "file3.txt" })
     assert_first_visible_file_selected(explorer, session, "nested/deep.txt")
   end)
 
-  -- Test 7: Lifecycle session is created correctly
-  it("Creates lifecycle session with explorer mode", function()
-    vim.cmd("edit " .. temp_dir .. "/file1.txt")
-    vim.cmd("CodeDiff")
-    
-    vim.wait(3000, function()
-      return vim.fn.winnr('$') == 3
-    end)
-    
-    local tabpage = vim.api.nvim_get_current_tabpage()
-    local has_lifecycle, lifecycle = pcall(require, 'codediff.ui.lifecycle')
-    if not has_lifecycle then
-      pending("lifecycle module not available in test context")
-      return
-    end
-    
-    local session = lifecycle.get_session(tabpage)
-    
-    assert.is_not_nil(session, "Should have lifecycle session")
-    assert.equal("explorer", session.panel and session.panel.name, "Session panel should be explorer")
-    assert.is_not_nil(session.git_root, "Should have git_root")
-  end)
 
   -- Test 8: No changes shows appropriate message
   it("Shows message when no changes exist", function()
@@ -656,12 +517,5 @@ describe("Explorer Mode", function()
       "Group/directory nodes should not change current group")
   end)
 
-  -- Test 10: Commands.lua simplicity (no callbacks in commands)
-  it("Commands.lua follows simple pattern", function()
-    local commands_path = h.project_root .. "/lua/codediff/commands/handlers/explorer.lua"
-    assert.equals(1, vim.fn.filereadable(commands_path), "the current command handler must exist")
-    local content = table.concat(vim.fn.readfile(commands_path), "\n")
-    assert.is_nil(content:match("local%s+function%s+on_file_select"), "commands must not define panel selection callbacks")
-  end)
 end)
 

@@ -39,8 +39,7 @@ describe("Explorer tree render", function()
     local explorer = (session.panel or {}).view
     assert.is_not_nil(explorer, "explorer object should be attached to the session")
 
-    local _, explorer_buf = h.find_window_by_filetype("codediff-explorer")
-    local content = h.get_buffer_content(explorer_buf)
+    local content = h.get_buffer_content(explorer.bufnr)
 
     -- Every changed file must appear — no partial listing / silent filter.
     h.assert_contains(content, "a.txt", "explorer should list src/a.txt")
@@ -60,7 +59,7 @@ describe("Explorer tree render", function()
 
     -- Only one changed file? Then next_file is a no-op by design (cycle over
     -- a single item), and asserting a change would be wrong. Guard.
-    local all_files = require("codediff.ui.explorer.tree").get_all_files(explorer.tree)
+    local all_files = require("codediff.ui.explorer.tree").get_pane_files(explorer)
     assert.is_true(#all_files >= 2,
       "test setup should produce >= 2 changed files, got " .. #all_files)
 

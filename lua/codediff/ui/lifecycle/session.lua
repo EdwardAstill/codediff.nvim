@@ -104,6 +104,7 @@ function M.create_session(tabpage, session_config, panes)
 
     -- Lifecycle state
     layout = "side-by-side",
+    popup = session_config.popup,
     exit_on_close = session_config.exit_on_close == true,
     suspended = false,
     single_side = nil,

@@ -2,7 +2,7 @@ codediff.nvim                                 *codediff.txt* *codediff.nvim* *co
 
 This personal fork of CodeDiff focuses on viewing diffs and staging changes
 in Neovim. It keeps repository changes synchronized while you inspect diffs,
-stage or discard hunks, review history, and resolve merge conflicts.
+stage or unstage hunks, files and folders, review history, and resolve conflicts.
 
 This help file is usage-focused. For installation, build, and development
 details, see README.md.
@@ -15,6 +15,21 @@ After installing the plugin and running |:CodeDiff|, you can:
 - Compare the current file with a git revision
 - Review a pull request without checking it out
 - Compare two files or directories
+
+The default side-by-side status view is a popup in the current tab. Unstaged
+files are above staged files on the left; Before and After occupy the middle
+and right. Each file tree has independent folder expansion and selection.
+
+  Tab / Shift-Tab   Cycle panes
+  Enter            Preview file / expand folder
+  -                Stage or unstage selected file/folder, including descendants
+  <leader>hs / hu   Stage / unstage the hunk at the diff cursor
+  S / U            Stage / unstage everything (from either tree)
+  q                Close popup, preserving the underlying editor
+  gf               Close popup and open selected file in the originating editor
+
+The popup disables restore/discard and diff-copy shortcuts. Conflict files add
+a Result pane. Revision, history and explicit inline views retain tab layouts.
 
 ==============================================================================
 COMMANDS                                                  *codediff-commands*

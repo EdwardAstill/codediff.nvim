@@ -221,8 +221,7 @@ function M.update(session, data, changes)
       require("codediff.ui.conflict").attach_gutter(session.original_win, session.modified_win)
       result_view.render(session)
     elseif session.single_side then
-      core.render_whole_file(session[session.single_side .. "_bufnr"], session.single_side)
-      session.stored_diff_result = { changes = {}, moves = {} }
+      session.stored_diff_result = core.render_whole_file(session[session.single_side .. "_bufnr"], session.single_side)
     else
       session.stored_diff_result = assert(M.render_diff(session.original_bufnr, session.modified_bufnr, data.original, data.modified, session.layout))
     end
