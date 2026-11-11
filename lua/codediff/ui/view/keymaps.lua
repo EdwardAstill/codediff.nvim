@@ -109,8 +109,11 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
     for _, buf in ipairs({ original_bufnr, modified_bufnr }) do
       if buf and vim.api.nvim_buf_is_valid(buf) then
         lifecycle.set_buf_keymap(tabpage, buf, "n", "r", function()
-          hunk.discard_hunk(ctx)
-        end, { desc = "Reject unstaged hunk" })
+          hunk.revert_hunk(ctx)
+        end, { desc = "Revert hunk to comparison baseline" })
+        lifecycle.set_buf_keymap(tabpage, buf, "n", "o", function()
+          require("codediff.ui.view.actions.omp").send_hunk(ctx)
+        end, { desc = "Send hunk to OMP draft" })
       end
     end
     -- Panel-specific horizontal keys must win over the tab-wide spatial keys.
@@ -232,7 +235,7 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
     end
   end
 
-  -- Hunk-level staging (S, U, D) - stage/unstage/discard individual hunks via git apply
+  -- Hunk actions: staging changes the index; reverting restores working files.
   -- Only set on diff buffers, not explorer (S/U conflict with stage_all/unstage_all)
   local hunk_opts = { noremap = true, silent = true, nowait = true }
   local diff_bufs = {}
@@ -253,11 +256,14 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
         hunk.unstage_hunk(ctx)
       end, vim.tbl_extend("force", hunk_opts, { desc = "Unstage hunk under cursor" }))
     end
-    if keymaps.discard_hunk and not (session and session.popup) then
-      lifecycle.set_buf_keymap(tabpage, bufnr, "n", keymaps.discard_hunk, function()
-        hunk.discard_hunk(ctx)
-      end, vim.tbl_extend("force", hunk_opts, { desc = "Discard hunk under cursor" }))
+    if keymaps.revert_hunk and not (session and session.popup) then
+      lifecycle.set_buf_keymap(tabpage, bufnr, "n", keymaps.revert_hunk, function()
+        hunk.revert_hunk(ctx)
+      end, vim.tbl_extend("force", hunk_opts, { desc = "Revert hunk to comparison baseline" }))
     end
+    lifecycle.set_buf_keymap(tabpage, bufnr, "n", "o", function()
+      require("codediff.ui.view.actions.omp").send_hunk(ctx)
+    end, vim.tbl_extend("force", hunk_opts, { desc = "Send hunk to OMP draft" }))
 
     -- Hunk textobject (ih) - select hunk lines in visual/operator-pending mode
     if keymaps.hunk_textobject then

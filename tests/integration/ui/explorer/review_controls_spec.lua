@@ -15,6 +15,10 @@ local function bytes(path)
   return table.concat(vim.fn.readfile(path, "b"), "\n")
 end
 
+local function index_bytes(repo)
+  return bytes(vim.trim(repo.git({ "rev-parse", "--path-format=absolute", "--git-path", "index" }, 0)))
+end
+
 local function write_bytes(path, content)
   vim.fn.writefile(vim.split(content, "\n", { plain = true }), path, "b")
 end
@@ -87,13 +91,13 @@ describe("Popup review controls", function()
     repo.write_file("file.txt", indexed)
     repo.git({ "add", "." }, 0)
     local working = vim.deepcopy(indexed)
-    working[10], working[25] = "reject this", "keep this"
+    working[10], working[25] = "revert this", "keep this"
     repo.write_file("file.txt", working)
     return indexed, working
   end
 
   local function confirm(session, key)
-    assert.is_not_nil(session.popup.dialog, "rejection must require explicit confirmation")
+    assert.is_not_nil(session.popup.dialog, "reverting must require explicit confirmation")
     vim.api.nvim_set_current_win(session.popup.dialog.winid)
     press(key)
   end
@@ -141,7 +145,7 @@ describe("Popup review controls", function()
     assert.same({}, vim.api.nvim_buf_get_extmarks(modified, ns, 0, -1, {}))
   end)
 
-  it("cancels rejection without changing disk, index, or buffer", function()
+  it("cancels revert without changing disk, index, or buffer", function()
     local indexed, working = fixture()
     local session, root = open("file.txt")
     select_file(session, root.panes[1], "file.txt")
@@ -161,16 +165,18 @@ describe("Popup review controls", function()
     assert.is_false(vim.bo[session.modified_bufnr].modified)
   end)
 
-  it("rejects only the selected unstaged hunk and keeps staged content", function()
+  it("reverts only the selected unstaged hunk and leaves index bytes unchanged", function()
     local indexed, working = fixture()
     local session, root = open("file.txt")
     select_file(session, root.panes[1], "file.txt")
     focus(session, 10, true)
+    local index_before = index_bytes(repo)
     press("r")
     confirm(session, "y")
     working[10] = indexed[10]
     assert.equals(table.concat(working, "\n") .. "\n", bytes(repo.path("file.txt")))
     assert.equals(table.concat(indexed, "\n") .. "\n", repo.git({ "show", ":file.txt" }))
+    assert.equals(index_before, index_bytes(repo))
     eventually(function() return #session.stored_diff_result.changes == 1 end)
     assert.same(working, vim.api.nvim_buf_get_lines(session.modified_bufnr, 0, -1, false))
   end)
@@ -216,8 +222,114 @@ describe("Popup review controls", function()
     end)
   end
 
-  it("requires unstaging before rejection", function()
+  for _, target in ipairs({ "worktree", "index", "buffer" }) do
+    it("cancels staged revert when " .. target .. " changes during confirmation", function()
+      local indexed, working = fixture()
+      local session, root = open("file.txt")
+      select_file(session, root.panes[2], "file.txt")
+      focus(session, 1)
+      press("r")
+      if target == "worktree" then
+        working[1] = "external staged-target edit"
+        repo.write_file("file.txt", working)
+      elseif target == "index" then
+        repo.git({ "add", "file.txt" }, 0)
+        indexed = working
+      else
+        local buf = vim.fn.bufnr(repo.path("file.txt"))
+        vim.api.nvim_buf_set_lines(buf, 0, 1, false, { "unsaved staged-target edit" })
+      end
+      confirm(session, "y")
+      assert.equals(table.concat(working, "\n") .. "\n", bytes(repo.path("file.txt")))
+      assert.equals(table.concat(indexed, "\n") .. "\n", repo.git({ "show", ":file.txt" }))
+      if target == "buffer" then
+        local buf = vim.fn.bufnr(repo.path("file.txt"))
+        assert.is_true(vim.bo[buf].modified)
+        assert.equals("unsaved staged-target edit", vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1])
+        vim.bo[buf].modified = false
+      end
+    end)
+  end
+
+  it("refuses a stale displayed hunk before opening confirmation", function()
     local indexed, working = fixture()
+    local session, root = open("file.txt")
+    select_file(session, root.panes[1], "file.txt")
+    focus(session, 10)
+    working[10] = "changed since rendering"
+    repo.write_file("file.txt", working)
+    press("r")
+    assert.is_nil(session.popup.dialog)
+    assert.equals(table.concat(working, "\n") .. "\n", bytes(repo.path("file.txt")))
+    assert.equals(table.concat(indexed, "\n") .. "\n", repo.git({ "show", ":file.txt" }))
+  end)
+
+  it("s unstages a selected hunk but keeps working edits", function()
+    local _, working = fixture()
+    local session, root = open("file.txt")
+    select_file(session, root.panes[2], "file.txt")
+    focus(session, 1)
+    press("s")
+    eventually(function() return repo.git({ "diff", "--cached", "--", "file.txt" }) == "" end)
+    assert.equals(table.concat(working, "\n") .. "\n", bytes(repo.path("file.txt")))
+  end)
+
+  it("reverts a staged hunk to HEAD in the working file without unstaging", function()
+    local indexed, working = fixture()
+    local session, root = open("file.txt")
+    select_file(session, root.panes[2], "file.txt")
+    focus(session, 1)
+    local index_before = index_bytes(repo)
+    press("r")
+    confirm(session, "y")
+    working[1] = "line 1"
+    assert.equals(table.concat(working, "\n") .. "\n", bytes(repo.path("file.txt")))
+    assert.equals(table.concat(indexed, "\n") .. "\n", repo.git({ "show", ":file.txt" }))
+    assert.equals(index_before, index_bytes(repo))
+    eventually(function() return session.modified_revision == ":0" and not session.refresh.loading end)
+    focus(session, 1)
+    press("r")
+    assert.is_nil(session.popup.dialog)
+    assert.equals(table.concat(working, "\n") .. "\n", bytes(repo.path("file.txt")))
+  end)
+
+  for _, deleted in ipairs({ false, true }) do
+    it("reverts staged " .. (deleted and "deleted" or "inserted") .. " lines only once", function()
+      local base = {}
+      for i = 1, 30 do base[i] = "line " .. i end
+      repo.write_file("file.txt", base)
+      repo.git({ "add", "." }, 0)
+      repo.git({ "commit", "-m", "initial" }, 0)
+      local indexed = vim.deepcopy(base)
+      if deleted then table.remove(indexed, 10) else table.insert(indexed, 10, "inserted") end
+      repo.write_file("file.txt", indexed)
+      repo.git({ "add", "." }, 0)
+      local working = vim.deepcopy(indexed)
+      working[deleted and 24 or 26] = "keep unrelated work"
+      repo.write_file("file.txt", working)
+      local session, root = open("file.txt")
+      select_file(session, root.panes[2], "file.txt")
+      focus(session, 10, deleted)
+      local index_before = index_bytes(repo)
+      press("r")
+      confirm(session, "y")
+      base[25] = "keep unrelated work"
+      assert.equals(table.concat(base, "\n") .. "\n", bytes(repo.path("file.txt")))
+      assert.equals(index_before, index_bytes(repo))
+      eventually(function() return not session.refresh.loading end)
+      select_file(session, root.panes[2], "file.txt")
+      focus(session, 10, deleted)
+      press("r")
+      assert.is_nil(session.popup.dialog)
+      assert.equals(table.concat(base, "\n") .. "\n", bytes(repo.path("file.txt")))
+      assert.equals(table.concat(indexed, "\n") .. "\n", repo.git({ "show", ":file.txt" }))
+    end)
+  end
+
+  it("refuses staged revert when the selected working hunk has other edits", function()
+    local indexed, working = fixture()
+    working[1] = "new working edit"
+    repo.write_file("file.txt", working)
     local session, root = open("file.txt")
     select_file(session, root.panes[2], "file.txt")
     focus(session, 1)
@@ -228,7 +340,42 @@ describe("Popup review controls", function()
   end)
 
   for _, deleted in ipairs({ false, true }) do
-    it("safely rejects a one-sided " .. (deleted and "deletion" or "addition"), function()
+    it("reverts a staged whole-file " .. (deleted and "deletion" or "addition") .. " only once", function()
+      repo.write_file("anchor.txt", { "anchor" })
+      local content = "first\r\nsecond without final newline"
+      if deleted then write_bytes(repo.path("boundary.txt"), content) end
+      repo.git({ "add", "." }, 0)
+      repo.git({ "commit", "-m", "initial" }, 0)
+      if deleted then vim.fn.delete(repo.path("boundary.txt")) else write_bytes(repo.path("boundary.txt"), content) end
+      repo.git({ "add", "-A" }, 0)
+      local session, root = open("anchor.txt")
+      select_file(session, root.panes[2], "boundary.txt")
+      focus(session, 1, deleted)
+      local index_before = index_bytes(repo)
+      press("r")
+      confirm(session, "y")
+      assert.equals(index_before, index_bytes(repo))
+      if deleted then
+        assert.equals(content, bytes(repo.path("boundary.txt")))
+      else
+        assert.equals(0, vim.fn.filereadable(repo.path("boundary.txt")))
+      end
+      eventually(function() return not session.refresh.loading end)
+      select_file(session, root.panes[2], "boundary.txt")
+      focus(session, 1, deleted)
+      press("r")
+      assert.is_nil(session.popup.dialog)
+      if deleted then
+        assert.equals(content, bytes(repo.path("boundary.txt")))
+      else
+        assert.equals(0, vim.fn.filereadable(repo.path("boundary.txt")))
+      end
+      assert.equals(index_before, index_bytes(repo))
+    end)
+  end
+
+  for _, deleted in ipairs({ false, true }) do
+    it("safely reverts a one-sided " .. (deleted and "deletion" or "addition"), function()
       repo.write_file("anchor.txt", { "anchor" })
       local content = "first\r\nsecond without final newline"
       if deleted then write_bytes(repo.path("boundary.txt"), content) end
@@ -250,14 +397,14 @@ describe("Popup review controls", function()
     end)
   end
 
-  it("preserves CRLF and missing final newline when rejecting one of multiple hunks", function()
+  it("preserves CRLF and missing final newline when reverting one of multiple hunks", function()
     local base = {}
     for i = 1, 30 do base[i] = "line " .. i end
     write_bytes(repo.path("file.txt"), table.concat(base, "\r\n"))
     repo.git({ "add", "." }, 0)
     repo.git({ "commit", "-m", "initial" }, 0)
     local working = vim.deepcopy(base)
-    working[10], working[25] = "reject this", "keep this"
+    working[10], working[25] = "revert this", "keep this"
     write_bytes(repo.path("file.txt"), table.concat(working, "\r\n"))
     local session, root = open("file.txt")
     select_file(session, root.panes[1], "file.txt")
@@ -272,10 +419,7 @@ describe("Popup review controls", function()
 
   it("shows standalone review help and closes it with h", function()
     require("codediff.ui.keymap_help").toggle(vim.api.nvim_get_current_tabpage())
-    local win, buf = vim.api.nvim_get_current_win(), vim.api.nvim_get_current_buf()
-    local text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
-    assert.is_truthy(text:find("Reject unstaged hunk", 1, true))
-    assert.is_truthy(text:find("unsaved", 1, true))
+    local win = vim.api.nvim_get_current_win()
     press("h")
     assert.is_false(vim.api.nvim_win_is_valid(win))
   end)

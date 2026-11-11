@@ -76,7 +76,8 @@ local function build_sections(keymaps, is_bound, shape)
       { km.toggle_staged_view, "Toggle staged/unstaged view for current file" },
       { km.stage_hunk, "Stage hunk under cursor" },
       { km.unstage_hunk, "Unstage hunk under cursor" },
-      { km.discard_hunk, "Discard hunk under cursor" },
+      { km.revert_hunk, "Revert hunk to comparison baseline" },
+      { "o", "Send hunk to OMP draft" },
       { km.toggle_layout, "Toggle inline/side-by-side layout" },
       { km.align_move, "Align moved code block" },
       { km.toggle_compact, "Toggle compact mode (fold unchanged)" },
@@ -303,15 +304,17 @@ local function toggle_review_help(tabpage, session)
     { title = "DIFF PANES", items = {
       { "j / l", "Move left / right" },
       { "s", "Stage / unstage hunk under cursor" },
-      { "r", "Reject unstaged hunk (y confirms)" },
+      { "r", "Revert hunk to left baseline (y confirms)" },
+      { "o", "Send hunk to OMP draft (optional message)" },
     } },
   }
   local width, key_width = compute_width(sections)
   local lines, hls = render_group(sections, math.min(width, 88), key_width)
   vim.list_extend(lines, {
     "",
-    " Reject/stash refuse unsaved files. Press q, save in the editor,",
-    " then reopen review. Save shortcuts show help, never write here.",
+    " Revert restores the file; unstage changes only Git's index.",
+    " Revert/stash refuse unsaved files. Save outside review first.",
+    " OMP: Ctrl-s adds hunk + message to draft; Ctrl-q cancels.",
   })
   setup_highlights()
   handle = require("codediff.ui.dialog").open({ tabpage = tabpage }, {

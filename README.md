@@ -250,7 +250,7 @@ Both methods automatically place the library in the plugin root directory.
         toggle_staged_view = "gS", -- Swap between staged/unstaged view of current file (#352)
         stage_hunk = "<leader>hs",   -- Stage hunk under cursor to git index
         unstage_hunk = "<leader>hu", -- Unstage hunk under cursor from git index
-        discard_hunk = "<leader>hr", -- Discard hunk under cursor (working tree only)
+        revert_hunk = "<leader>hr", -- Restore hunk to LEFT baseline; index stays unchanged
         hunk_textobject = "ih",      -- Textobject for hunk (vih to select, yih to yank, etc.)
         show_help = "g?",   -- Show floating window with available keymaps
         align_move = "gm", -- Temporarily align moved code blocks across panes
@@ -429,13 +429,18 @@ Use `:CodeDiff` to review repository changes, pull requests, files, directories,
 | `s` | Stage/unstage selected file or folder in trees; current hunk in diffs |
 | `S` / `U` in trees | Stage / unstage everything |
 | `[` / `]` | Previous / next hunk |
-| `r` in diffs | Confirm rejection of the selected unstaged hunk |
+| `r` in diffs | Confirm reverting the selected working-file hunk to LEFT |
+| `o` in diffs | Compose an optional message and add the selected hunk to OMP's draft |
 | `c` | Commit popup: current HEAD and editable message; `Ctrl-s` submits |
 | `z` | Confirm stash of tracked changes; untracked files stay in place |
 | `b` / `w` | Separate read-only local branch / worktree lists |
 | `q` / `Ctrl-q` | Close review and restore the editor |
 
-The active hunk has `>` gutter markers, emphasized line numbers, and a `Hunk N/M` footer. Its selection stays visible while confirming rejection. `r` changes only that unstaged hunk; staged changes are untouched. Rejection and stash refuse unsaved affected buffers: return to the editor and save them first. Rejection cannot be undone by Git.
+The active hunk has `>` gutter markers, emphasized line numbers, and a `Hunk N/M` footer. Its selection stays visible while confirming a revert.
+
+**Unstage is not revert.** `s` in a staged view changes Git's index and keeps working-file edits. `r` restores only the selected hunk in the working file to the LEFT comparison: the index in an unstaged view, HEAD in a staged view, or the explicit revision being compared. The index stays unchanged, so a staged version remains staged until you unstage it. Revert and stash refuse unsaved affected buffers; save in the editor first. Revert also refuses renamed comparisons and conflicting working edits rather than overwriting them. Reverted working edits cannot be recovered by Git.
+
+With [omp.nvim](https://github.com/EdwardAstill/omp.nvim) installed, `o` opens a message composer for the captured hunk. `Ctrl-s` adds the optional message, paths, comparison revisions, and only that hunk to the selected OMP session's existing draft; a blank message sends the hunk alone. It never submits the prompt automatically. `Ctrl-q` cancels the composer; inside OMP it returns to the source diff pane. Failed handoffs keep the composer for retry. `o` also works in native revision views.
 
 Commits never auto-stage. Their popup shows only the current HEAD and your message, retains drafts after Git errors, and refuses submission if HEAD changed. `Ctrl-q` cancels a dialog. Branch/worktree lists never switch your checkout. Review keymaps are local to the workspace; normal save keys return when it closes. Conflict files add a Result pane.
 

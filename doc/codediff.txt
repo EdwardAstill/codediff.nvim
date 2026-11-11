@@ -28,15 +28,26 @@ diffs occupy the middle and right. The bottom statusline is hidden in review.
   s                  Stage/unstage file or folder (trees), current hunk (diffs)
   S / U              Stage / unstage everything (trees)
   [ / ]              Previous / next hunk
-  r                  Confirm rejecting selected unstaged hunk (diffs)
+  r                  Confirm reverting working-file hunk to LEFT (diffs)
+  o                  Add selected hunk and optional message to OMP draft (diffs)
   c                  Commit message popup, showing current HEAD
   z                  Confirm stash of tracked changes; keep untracked files
   b / w              Separate read-only branch / worktree lists
   q / Ctrl-q         Close popup and restore the underlying editor
 
 Active hunks have > gutter markers, emphasized line numbers, and a Hunk N/M
-footer. Rejection keeps staged changes but cannot be undone by Git. Reject
-and stash refuse unsaved affected buffers; save in the editor first.
+footer. Unstage changes only Git's index and keeps working edits. Revert restores
+the working-file hunk to LEFT: index for unstaged, HEAD for staged, or the
+explicit compared revision. The index stays unchanged; staged content remains
+staged. Revert refuses renamed comparisons and conflicting working edits.
+Revert/stash refuse unsaved affected buffers; save in the editor first.
+Reverted working edits cannot be recovered by Git.
+
+With omp.nvim installed, o captures the hunk and opens an optional-message
+composer. Ctrl-s adds the message and hunk to the existing OMP draft without
+submitting; an empty message sends only the hunk. Ctrl-q cancels the composer.
+OMP opens above review; its Ctrl-q returns to the source diff pane. Failed
+handoffs retain the composer. o also works in native revision views.
 
 The commit popup enters message input; Ctrl-s commits only the index and
 Ctrl-q cancels. Git failures keep the draft. A changed HEAD blocks submission.

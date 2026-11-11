@@ -1,5 +1,5 @@
 -- Hunk-level actions: locate the hunk under the cursor, and stage, unstage or
--- discard it.
+-- revert it in the working tree without changing the index.
 --
 -- Every action takes the session context built by ui/view/keymaps.lua rather
 -- than closing over buffers and layout flags, so a mapping installed for one
@@ -81,14 +81,15 @@ function M.refresh_selection(tabpage)
   })
   local changes = session.stored_diff_result and session.stored_diff_result.changes or {}
   local staged = session.modified_revision == ":0"
-  local footer = string.format(" Hunk %s/%d   s %s   %sh help ",
-    index or "-", #changes, staged and "unstage" or "stage", staged and "" or "r reject   ")
+  local footer = string.format(" Hunk %s/%d   s %s   r revert   o OMP   h help ",
+    index or "-", #changes, staged and "unstage" or "stage")
   vim.api.nvim_set_hl(0, "CodeDiffActiveHunk", { bold = true, underline = true, default = true })
   vim.api.nvim_set_hl(0, "CodeDiffActiveHunkSign", { link = "DiagnosticWarn", default = true })
   for _, side in ipairs({ "original", "modified" }) do
     local win, buf = session[side .. "_win"], session[side .. "_bufnr"]
     if win and vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_config(win).relative ~= "" then
-      vim.api.nvim_win_set_config(win, { footer = footer, footer_pos = "center" })
+      local label = vim.api.nvim_win_get_width(win) >= #footer and footer or footer:gsub("   o OMP", "")
+      vim.api.nvim_win_set_config(win, { footer = label, footer_pos = "center" })
     end
     if hunk and buf and vim.api.nvim_buf_is_valid(buf) then
       selection.buffers = selection.buffers or {}
@@ -267,16 +268,23 @@ function M.unstage_hunk(ctx)
 end
 
 -- Keep Git's patch bytes: rebuilding from decoded buffers loses encoding/EOL.
-local function review_patch(session, path)
+local function review_patch(session, path, worktree)
   local args = {
     "git", "--no-optional-locks", "--literal-pathspecs", "diff",
     "--no-ext-diff", "--no-textconv", "--no-renames", "--binary",
     "--no-color", "--unified=0", "--src-prefix=a/", "--dst-prefix=b/",
   }
-  local untracked = session.original.relative == ""
+  local staged = session.modified_revision == ":0"
+  local untracked = session.original.relative == "" and (not staged or worktree)
   if untracked then
     vim.list_extend(args, { "--no-index", "--", "/dev/null", path })
   else
+    if staged and not worktree then
+      table.insert(args, "--cached")
+    end
+    if session.original_revision and session.original_revision ~= ":0" then
+      table.insert(args, session.original_revision)
+    end
     vim.list_extend(args, { "--", path })
   end
   local result = vim.system(args, { cwd = session.git_root, text = false }):wait()
@@ -286,7 +294,7 @@ local function review_patch(session, path)
   return result.stdout
 end
 
-local function selected_patch(patch, hunk)
+local function selected_patch(patch, hunk, original_only, session)
   local header, hunks, current = {}, {}, nil
   for line in patch:gmatch("[^\n]*\n") do
     local os, oc, ms, mc = line:match("^@@ %-(%d+),?(%d*) %+(%d+),?(%d*) @@")
@@ -303,44 +311,100 @@ local function selected_patch(patch, hunk)
       table.insert(header, line)
     end
   end
-  local count = 0
+  local signatures = {}
   for _, chunk in ipairs(hunks) do
     local contained, overlaps = true, false
-    for _, side in ipairs({ "original", "modified" }) do
+    for _, side in ipairs(original_only and { "original" } or { "original", "modified" }) do
       local start, size = unpack(chunk[side])
       local range = hunk[side]
       contained = contained and start >= range.start_line and start + size <= range.end_line
-      overlaps = overlaps or (size == 0 and start >= range.start_line and start < range.end_line)
-        or (size > 0 and start < range.end_line and start + size > range.start_line)
+      overlaps = overlaps or (size == 0 and start >= range.start_line and start <= range.end_line)
+        or (size > 0 and start <= range.end_line and start + size >= range.start_line)
     end
     if overlaps and not contained then
       return nil
     end
     if contained then
+      if session then
+        local rows = { original = chunk.original[1], modified = chunk.modified[1] }
+        for _, line in ipairs(chunk.lines) do
+          local side = line:sub(1, 1) == "-" and "original" or line:sub(1, 1) == "+" and "modified" or nil
+          if side then
+            local buf = session[side .. "_bufnr"]
+            local expected = vim.api.nvim_buf_get_lines(buf, rows[side] - 1, rows[side], false)[1]
+            local value = line:sub(2, -2)
+            if vim.bo[buf].buftype ~= "" or vim.bo[buf].fileformat == "dos" then
+              value = value:gsub("\r$", "")
+            end
+            local encoding = vim.bo[buf].fileencoding
+            if vim.bo[buf].buftype == "" and encoding ~= "" and encoding ~= "utf-8" then
+              value = vim.iconv(value, encoding, "utf-8")
+            end
+            if not expected or expected ~= value then
+              return nil
+            end
+            rows[side] = rows[side] + 1
+          end
+        end
+      end
       vim.list_extend(header, chunk.lines)
-      count = count + 1
+      signatures[#signatures + 1] = string.format("%d,%d,%d\n", chunk.original[1], chunk.original[2], chunk.modified[2])
+        .. table.concat(chunk.lines, "", 2)
     end
   end
-  return count > 0 and table.concat(header) or nil
+  return #signatures > 0 and table.concat(header) or nil, table.concat(signatures)
 end
 
-local function reject_review_hunk(ctx, session, hunk, index)
-  if session.modified_revision ~= nil or (session.original_revision ~= ":0" and session.original.relative ~= "") then
-    vim.notify("Unstage this hunk before rejecting it", vim.log.levels.WARN)
-    return
-  end
+local function revert_selected_hunk(ctx, session, hunk, index)
   local path = session.modified.relative ~= "" and session.modified.relative or session.original.relative
   if not path or path == "" then
     vim.notify("No file selected", vim.log.levels.WARN)
     return
   end
   local full_path = session.git_root .. "/" .. path
+  if session.original.relative ~= "" and session.modified.relative ~= ""
+    and session.original.relative ~= session.modified.relative then
+    vim.notify("Revert cannot safely match a renamed comparison", vim.log.levels.WARN)
+    return
+  end
+  local function worktree_bytes()
+    local stat = (vim.uv or vim.loop).fs_lstat(full_path)
+    if not stat then
+      return false
+    end
+    if stat.type ~= "file" then
+      return nil
+    end
+    local file = io.open(full_path, "rb")
+    if not file then
+      return nil
+    end
+    local content = file:read("*a")
+    file:close()
+    return content
+  end
+  local working = worktree_bytes()
+  if working == nil or (session.modified.relative == "" and working ~= false) then
+    vim.notify("Working file conflicts with the selected hunk or is already restored", vim.log.levels.WARN)
+    return
+  end
+  local function index_state()
+    local result = vim.system({ "git", "--no-optional-locks", "--literal-pathspecs", "ls-files", "--stage", "-z", "--", path }, {
+      cwd = session.git_root, text = false,
+    }):wait()
+    return result.code == 0 and result.stdout or nil
+  end
+  local indexed = index_state()
+  if not indexed then
+    vim.notify("Cannot read index; revert cancelled", vim.log.levels.ERROR)
+    return
+  end
   local buffers, ticks = {}, {}
   local function clean_buffers()
     for _, buf in ipairs(vim.api.nvim_list_bufs()) do
       if vim.api.nvim_buf_is_loaded(buf) and vim.api.nvim_buf_get_name(buf) == full_path then
         if vim.bo[buf].modified then
-          vim.notify("Unsaved file: press q, save in the editor, then reopen review before rejecting", vim.log.levels.WARN)
+          vim.notify("Unsaved file: save in the editor and refresh before reverting", vim.log.levels.WARN)
           return false
         end
         buffers[buf] = true
@@ -362,23 +426,37 @@ local function reject_review_hunk(ctx, session, hunk, index)
     vim.notify("Cannot read hunk: " .. tostring(err), vim.log.levels.ERROR)
     return
   end
-  local selected = selected_patch(patch, hunk)
+  local selected, signature = selected_patch(patch, hunk, false, session)
+  if session.modified_revision == ":0" and selected then
+    local work_patch = review_patch(session, path, true)
+    local work_selected, work_signature
+    if work_patch then
+      work_selected, work_signature = selected_patch(work_patch, hunk, true)
+    end
+    selected = work_signature == signature and work_selected or nil
+  end
   if not selected then
-    vim.notify("Hunk no longer matches the working tree; refresh review first", vim.log.levels.WARN)
+    vim.notify("Hunk is stale, already reverted, or conflicts with the working file; refresh first", vim.log.levels.WARN)
     refresh.request(ctx.tabpage, { full = true })
     return
   end
   local diff = session.stored_diff_result
   local original, modified = session.original_bufnr, session.modified_bufnr
   local generation = session.refresh and session.refresh.generation
-  require("codediff.ui.dialog").confirm(ctx, "Reject unstaged hunk", {
+  local original_revision, modified_revision = session.original_revision, session.modified_revision
+  local baseline = session.original.relative == "" and "empty file"
+    or original_revision == ":0" and "index"
+    or (session.source_revisions and session.source_revisions.original) or original_revision
+  local lines = {
     path,
-    string.format("Reject hunk %d of %d? This cannot be undone by Git.", index, #diff.changes),
-    "Only this unstaged hunk is removed. Staged changes are kept.",
-  }, function()
+    string.format("Revert hunk %d of %d in the working file to LEFT (%s)?", index, #diff.changes, baseline),
+    "The index stays unchanged, including staged changes. Working edits cannot be recovered by Git.",
+  }
+  local function apply()
     if lifecycle.get_session(ctx.tabpage) ~= session or session.closing
       or session.original_bufnr ~= original or session.modified_bufnr ~= modified
-      or session.stored_diff_result ~= diff or session.modified_revision ~= nil
+      or session.stored_diff_result ~= diff or session.modified_revision ~= modified_revision
+      or session.original_revision ~= original_revision
       or (session.refresh and session.refresh.generation ~= generation) then
       vim.notify("Review changed; select the hunk again", vim.log.levels.WARN)
       return
@@ -393,8 +471,8 @@ local function reject_review_hunk(ctx, session, hunk, index)
       end
     end
     local current, read_err = review_patch(session, path)
-    if current ~= patch then
-      vim.notify("File or index changed; reject cancelled" .. (read_err and ": " .. read_err or ""), vim.log.levels.WARN)
+    if current ~= patch or worktree_bytes() ~= working or index_state() ~= indexed then
+      vim.notify("File or index changed; revert cancelled" .. (read_err and ": " .. read_err or ""), vim.log.levels.WARN)
       refresh.request(ctx.tabpage, { full = true })
       return
     end
@@ -403,7 +481,7 @@ local function reject_review_hunk(ctx, session, hunk, index)
       cwd = session.git_root, stdin = selected, text = false,
     }):wait()
     if result.code ~= 0 then
-      vim.notify("Failed to reject hunk: " .. (result.stderr or ""), vim.log.levels.ERROR)
+      vim.notify("Failed to revert hunk: " .. (result.stderr or ""), vim.log.levels.ERROR)
       return
     end
     for buf in pairs(buffers) do
@@ -413,25 +491,35 @@ local function reject_review_hunk(ctx, session, hunk, index)
           vim.cmd("silent noautocmd edit!")
         end)
         if not ok then
-          vim.notify("Hunk rejected, but buffer reload failed: " .. tostring(reload_err), vim.log.levels.ERROR)
+          vim.notify("Hunk reverted, but buffer reload failed: " .. tostring(reload_err), vim.log.levels.ERROR)
         end
       end
     end
     refresh.request(ctx.tabpage, { full = true })
-    vim.notify(string.format("Rejected hunk %d", index), vim.log.levels.INFO)
-  end)
+    vim.notify(string.format("Reverted hunk %d; index unchanged", index), vim.log.levels.INFO)
+  end
+  if session.popup then
+    require("codediff.ui.dialog").confirm(ctx, "Revert hunk", lines, apply)
+  elseif vim.fn.confirm(table.concat(lines, "\n"), "&Revert\n&Cancel", 2, "Warning") == 1 then
+    apply()
+  end
 end
 
-function M.discard_hunk(ctx)
+function M.revert_hunk(ctx)
   local session = lifecycle.get_session(ctx.tabpage)
   if not session or not session.git_root then
     vim.notify("Not in a git repository", vim.log.levels.WARN)
     return
   end
 
-  -- Only allow discarding in unstaged views (working tree changes)
-  if session.modified_revision ~= nil then
-    vim.notify(session.popup and "Unstage this hunk before rejecting it" or "Discard only works on unstaged changes (working tree)", vim.log.levels.WARN)
+  if (session.modified_revision ~= nil and session.modified_revision ~= "WORKING" and session.modified_revision ~= ":0")
+    or (session.original.relative ~= "" and (not session.original_revision or session.original_revision == "WORKING"))
+    or session.merge then
+    vim.notify("Revert needs a working-tree or staged comparison with a Git LEFT baseline", vim.log.levels.WARN)
+    return
+  end
+  if ctx.original_bufnr ~= session.original_bufnr or ctx.modified_bufnr ~= session.modified_bufnr then
+    vim.notify("Comparison changed; select the hunk again", vim.log.levels.WARN)
     return
   end
 
@@ -441,56 +529,7 @@ function M.discard_hunk(ctx)
     return
   end
 
-  if session.popup then
-    reject_review_hunk(ctx, session, hunk, hunk_idx)
-    return
-  end
-
-  -- Prompt for confirmation before discarding (destructive operation)
-  local prompt = string.format("Discard hunk %d?", hunk_idx)
-  local choice = vim.fn.confirm(prompt, "&Discard\n&Cancel", 2, "Warning")
-  if choice ~= 1 then
-    return
-  end
-
-  local discard_orig_buf, discard_mod_buf = lifecycle.get_buffers(ctx.tabpage)
-  if not discard_orig_buf or not discard_mod_buf or not vim.api.nvim_buf_is_valid(discard_orig_buf) or not vim.api.nvim_buf_is_valid(discard_mod_buf) then
-    vim.notify("Diff buffers are no longer available", vim.log.levels.WARN)
-    return
-  end
-
-  -- Replace the modified hunk range with the original lines. Every other line
-  -- (including unrelated unsaved edits) stays as-is in the live buffer, so the
-  -- discarded region falls back to original content and nothing else changes.
-  local orig_lines = vim.api.nvim_buf_get_lines(discard_orig_buf, hunk.original.start_line - 1, hunk.original.end_line - 1, false)
-
-  local was_modifiable = vim.bo[discard_mod_buf].modifiable
-  local was_readonly = vim.bo[discard_mod_buf].readonly
-
-  local ok, edit_err = pcall(function()
-    vim.bo[discard_mod_buf].readonly = false
-    vim.bo[discard_mod_buf].modifiable = true
-    vim.api.nvim_buf_set_lines(discard_mod_buf, hunk.modified.start_line - 1, hunk.modified.end_line - 1, false, orig_lines)
-    -- Persist through the native write path so 'fileformat', 'fileencoding'
-    -- and 'endofline' are honored. 'noautocmd' keeps format-on-save (and
-    -- similar BufWritePre hooks) from rewriting lines outside the hunk.
-    vim.api.nvim_buf_call(discard_mod_buf, function()
-      vim.cmd("silent noautocmd write!")
-    end)
-  end)
-
-  if vim.api.nvim_buf_is_valid(discard_mod_buf) then
-    vim.bo[discard_mod_buf].modifiable = was_modifiable
-    vim.bo[discard_mod_buf].readonly = was_readonly
-  end
-
-  if not ok then
-    vim.notify("Failed to discard hunk: " .. tostring(edit_err), vim.log.levels.ERROR)
-    return
-  end
-
-  refresh.buffer_changed(discard_mod_buf)
-  vim.notify(string.format("Discarded hunk %d", hunk_idx), vim.log.levels.INFO)
+  revert_selected_hunk(ctx, session, hunk, hunk_idx)
 end
 
 --- Visually select the hunk under the cursor, for the `ih` textobject.

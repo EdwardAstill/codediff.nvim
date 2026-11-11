@@ -102,7 +102,7 @@ end
 --- Returns tabpage, session, explorer.
 --- @param repo table  Repo helper from h.create_temp_git_repo()
 --- @param timeout_ms? number  (default 10000)
---- @param revision? string Explicit revision mode keeps legacy non-popup actions.
+--- @param revision? string Explicit revision mode uses native confirmation.
 --- @return number tabpage
 --- @return table session
 --- @return table explorer
@@ -377,9 +377,9 @@ describe("Hunk operations (side-by-side)", function()
   end)
 
   -- --------------------------------------------------------------------------
-  -- Test 4: discard_hunk reverts working tree and updates diff
+  -- Test 4: revert_hunk restores working tree content without touching the index
   -- --------------------------------------------------------------------------
-  it("discard_hunk refreshes the visible buffer when autoread is disabled", function()
+  it("revert_hunk refreshes the visible buffer when autoread is disabled", function()
     vim.o.autoread = false
     repo = create_two_hunk_repo()
     local tabpage, session, explorer = open_codediff_and_wait(repo, nil, "HEAD")
@@ -390,10 +390,10 @@ describe("Hunk operations (side-by-side)", function()
     assert.is_true(has_2, "Should start with 2 hunks")
 
     local _, mod_buf = lifecycle.get_buffers(tabpage)
-    local discard_fn = get_keymap_fn(mod_buf, "Discard hunk")
-    assert.is_truthy(discard_fn, "discard_hunk keymap callback should be set")
+    local revert_fn = get_keymap_fn(mod_buf, "Revert hunk")
+    assert.is_truthy(revert_fn, "revert_hunk keymap callback should be set")
 
-    -- Mock vim.fn.confirm to auto-confirm "Discard" (choice 1)
+    -- Mock vim.fn.confirm to auto-confirm "Revert" (choice 1)
     local original_confirm = vim.fn.confirm
     vim.fn.confirm = function(_, _, _, _)
       return 1
@@ -402,14 +402,12 @@ describe("Hunk operations (side-by-side)", function()
     -- Position cursor on hunk 1 (line 1)
     position_cursor_in_modified(tabpage, 1)
 
-    -- Invoke discard_hunk
-    discard_fn()
+    revert_fn()
 
     -- Restore original vim.fn.confirm
     vim.fn.confirm = original_confirm
 
-    -- Discard edits the buffer in memory and writes it to disk (VSCode-style),
-    -- so the visible buffer and recomputed diff update without relying on autoread.
+    -- Reload explicitly rather than relying on autoread.
     local refreshed = vim.wait(8000, function()
       local current = lifecycle.get_session(tabpage)
       if not current or not current.stored_diff_result or not current.stored_diff_result.changes then
@@ -419,7 +417,7 @@ describe("Hunk operations (side-by-side)", function()
       return first == "original line 1" and #current.stored_diff_result.changes == 1
     end, 100)
 
-    assert.is_true(refreshed, "Discard should refresh the visible buffer and leave exactly one hunk")
+    assert.is_true(refreshed, "Revert should refresh the visible buffer and leave exactly one hunk")
 
     local disk_lines = vim.fn.readfile(repo.path("file1.txt"))
     local buffer_lines = vim.api.nvim_buf_get_lines(mod_buf, 0, -1, false)
@@ -427,10 +425,36 @@ describe("Hunk operations (side-by-side)", function()
     assert.equals("original line 1", buffer_lines[1], "Line 1 should be reverted in the visible buffer")
     assert.equals("MODIFIED line 9", disk_lines[9], "Line 9 should remain modified on disk")
     assert.equals("MODIFIED line 9", buffer_lines[9], "Line 9 should remain modified in the visible buffer")
-    assert.is_false(vim.bo[mod_buf].modified, "Buffer should be clean after the discard writes to disk")
+    assert.is_false(vim.bo[mod_buf].modified, "Buffer should be clean after reloading the reverted file")
   end)
 
-  it("discard_hunk keeps unrelated buffer edits and saves them to disk (VSCode parity)", function()
+  it("revert_hunk uses the explicit LEFT revision rather than HEAD or the index", function()
+    repo = create_two_hunk_repo()
+    local working = vim.fn.readfile(repo.path("file1.txt"))
+    local head = vim.deepcopy(working)
+    head[1], head[9] = "different HEAD baseline", "original line 9"
+    repo.write_file("file1.txt", head)
+    repo.git({ "add", "file1.txt" }, 0)
+    repo.git({ "commit", "-m", "second baseline" }, 0)
+    repo.write_file("file1.txt", working)
+    local tabpage = open_codediff_and_wait(repo, nil, "HEAD~1")
+    assert.is_true(wait_for_hunks(tabpage, 2, 8000))
+    local _, mod_buf = require("codediff.ui.lifecycle").get_buffers(tabpage)
+    local index_path = vim.trim(repo.git({ "rev-parse", "--path-format=absolute", "--git-path", "index" }, 0))
+    local index_before = table.concat(vim.fn.readfile(index_path, "b"), "\n")
+    local original_confirm = vim.fn.confirm
+    vim.fn.confirm = function() return 1 end
+    position_cursor_in_modified(tabpage, 1)
+    get_keymap_fn(mod_buf, "Revert hunk")()
+    vim.fn.confirm = original_confirm
+    working[1] = "original line 1"
+    assert.same(working, vim.fn.readfile(repo.path("file1.txt")))
+    assert.same(working, vim.api.nvim_buf_get_lines(mod_buf, 0, -1, false))
+    assert.equals(table.concat(head, "\n") .. "\n", repo.git({ "show", ":file1.txt" }))
+    assert.equals(index_before, table.concat(vim.fn.readfile(index_path, "b"), "\n"))
+  end)
+
+  it("revert_hunk refuses unsaved edits instead of silently writing them", function()
     repo = h.create_temp_git_repo()
     local base = {}
     for i = 1, 20 do
@@ -458,39 +482,25 @@ describe("Hunk operations (side-by-side)", function()
     assert.is_true(wait_for_hunks(tabpage, 3, 8000), "Unsaved edit should add a third hunk")
     assert.is_true(vim.bo[mod_buf].modified, "Buffer should contain an unsaved edit")
 
-    local discard_fn = get_keymap_fn(mod_buf, "Discard hunk")
-    assert.is_truthy(discard_fn, "discard_hunk keymap callback should be set")
+    local revert_fn = get_keymap_fn(mod_buf, "Revert hunk")
+    assert.is_truthy(revert_fn, "revert_hunk keymap callback should be set")
 
     local original_confirm = vim.fn.confirm
     vim.fn.confirm = function()
       return 1
     end
     position_cursor_in_modified(tabpage, 1)
-    discard_fn()
+    revert_fn()
     vim.fn.confirm = original_confirm
 
-    local refreshed = vim.wait(8000, function()
-      local current = lifecycle.get_session(tabpage)
-      if not current or not current.stored_diff_result or not current.stored_diff_result.changes then
-        return false
-      end
-      local lines = vim.api.nvim_buf_get_lines(mod_buf, 0, -1, false)
-      return lines[1] == "original line 1"
-        and lines[10] == "UNSAVED line 10"
-        and #current.stored_diff_result.changes == 2
-    end, 100)
-
-    assert.is_true(refreshed, "Discard should revert its hunk and keep unrelated buffer edits")
-
-    local disk_lines = vim.fn.readfile(repo.path("file1.txt"))
-    local buffer_lines = vim.api.nvim_buf_get_lines(mod_buf, 0, -1, false)
-    assert.equals("original line 1", disk_lines[1], "Discarded hunk should be reverted on disk")
-    assert.equals("UNSAVED line 10", disk_lines[10], "Whole-buffer save persists the unrelated edit to disk (VSCode parity)")
-    assert.equals("UNSAVED line 10", buffer_lines[10], "Unrelated buffer edit remains in the buffer")
-    assert.is_false(vim.bo[mod_buf].modified, "Buffer should be clean after the save")
+    assert.same(changed, vim.fn.readfile(repo.path("file1.txt")))
+    changed[10] = "UNSAVED line 10"
+    assert.same(changed, vim.api.nvim_buf_get_lines(mod_buf, 0, -1, false))
+    assert.is_true(vim.bo[mod_buf].modified, "Refused revert must leave unsaved edits untouched")
+    vim.bo[mod_buf].modified = false
   end)
 
-  it("discard_hunk restores deleted lines to buffer and disk exactly once", function()
+  it("revert_hunk restores deleted lines to buffer and disk exactly once", function()
     repo = h.create_temp_git_repo()
     local base = { "line 1", "deleted line 2", "deleted line 3", "line 4" }
     repo.write_file("file1.txt", base)
@@ -504,15 +514,15 @@ describe("Hunk operations (side-by-side)", function()
 
     local session = lifecycle.get_session(tabpage)
     local _, mod_buf = lifecycle.get_buffers(tabpage)
-    local discard_fn = get_keymap_fn(mod_buf, "Discard hunk")
-    assert.is_truthy(discard_fn, "discard_hunk keymap callback should be set")
+    local revert_fn = get_keymap_fn(mod_buf, "Revert hunk")
+    assert.is_truthy(revert_fn, "revert_hunk keymap callback should be set")
 
     local original_confirm = vim.fn.confirm
     vim.fn.confirm = function()
       return 1
     end
     position_cursor_in_modified(tabpage, session.stored_diff_result.changes[1].modified.start_line)
-    discard_fn()
+    revert_fn()
     vim.fn.confirm = original_confirm
 
     local refreshed = vim.wait(8000, function()
@@ -524,12 +534,12 @@ describe("Hunk operations (side-by-side)", function()
       return vim.deep_equal(lines, base) and #current.stored_diff_result.changes == 0
     end, 100)
 
-    assert.is_true(refreshed, "Discarding a deletion hunk must restore deleted lines exactly once")
+    assert.is_true(refreshed, "Reverting a deletion hunk must restore deleted lines exactly once")
     assert.same(base, vim.fn.readfile(repo.path("file1.txt")))
     assert.same(base, vim.api.nvim_buf_get_lines(mod_buf, 0, -1, false))
   end)
 
-  it("discard_hunk removes inserted lines when autoread is disabled", function()
+  it("revert_hunk removes inserted lines when autoread is disabled", function()
     vim.o.autoread = false
     repo = h.create_temp_git_repo()
     local base = { "line 1", "line 4" }
@@ -544,15 +554,15 @@ describe("Hunk operations (side-by-side)", function()
 
     local session = lifecycle.get_session(tabpage)
     local _, mod_buf = lifecycle.get_buffers(tabpage)
-    local discard_fn = get_keymap_fn(mod_buf, "Discard hunk")
-    assert.is_truthy(discard_fn, "discard_hunk keymap callback should be set")
+    local revert_fn = get_keymap_fn(mod_buf, "Revert hunk")
+    assert.is_truthy(revert_fn, "revert_hunk keymap callback should be set")
 
     local original_confirm = vim.fn.confirm
     vim.fn.confirm = function()
       return 1
     end
     position_cursor_in_modified(tabpage, session.stored_diff_result.changes[1].modified.start_line)
-    discard_fn()
+    revert_fn()
     vim.fn.confirm = original_confirm
 
     local refreshed = vim.wait(8000, function()
@@ -564,7 +574,7 @@ describe("Hunk operations (side-by-side)", function()
       return vim.deep_equal(lines, base) and #current.stored_diff_result.changes == 0
     end, 100)
 
-    assert.is_true(refreshed, "Discard should remove inserted lines from disk and buffer")
+    assert.is_true(refreshed, "Revert should remove inserted lines from disk and buffer")
     assert.same(base, vim.fn.readfile(repo.path("file1.txt")))
     assert.same(base, vim.api.nvim_buf_get_lines(mod_buf, 0, -1, false))
   end)
@@ -693,7 +703,7 @@ describe("Hunk operations (inline)", function()
         .. ", group=" .. tostring(explorer.data.current_file_group))
   end)
 
-  it("discard_hunk refreshes inline mode when autoread is disabled", function()
+  it("revert_hunk refreshes inline mode when autoread is disabled", function()
     vim.o.autoread = false
     repo = create_two_hunk_repo()
     local tabpage = open_codediff_and_wait(repo, nil, "HEAD")
@@ -701,15 +711,15 @@ describe("Hunk operations (inline)", function()
     assert.is_true(wait_for_hunks(tabpage, 2, 8000), "Should start with 2 hunks in inline mode")
 
     local _, mod_buf = lifecycle.get_buffers(tabpage)
-    local discard_fn = get_keymap_fn(mod_buf, "Discard hunk")
-    assert.is_truthy(discard_fn, "discard_hunk keymap callback should be set in inline mode")
+    local revert_fn = get_keymap_fn(mod_buf, "Revert hunk")
+    assert.is_truthy(revert_fn, "revert_hunk keymap callback should be set in inline mode")
 
     local original_confirm = vim.fn.confirm
     vim.fn.confirm = function()
       return 1
     end
     position_cursor_in_modified(tabpage, 1)
-    discard_fn()
+    revert_fn()
     vim.fn.confirm = original_confirm
 
     local refreshed = vim.wait(8000, function()
@@ -721,7 +731,7 @@ describe("Hunk operations (inline)", function()
       return first == "original line 1" and #current.stored_diff_result.changes == 1
     end, 100)
 
-    assert.is_true(refreshed, "Inline discard should refresh the buffer and leave one hunk")
+    assert.is_true(refreshed, "Inline revert should refresh the buffer and leave one hunk")
   end)
 
   -- --------------------------------------------------------------------------
