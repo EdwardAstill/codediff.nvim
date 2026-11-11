@@ -1,24 +1,32 @@
 # codediff.nvim
 
-**Review diffs. Stage the changes you want.**
+**Review diffs, prepare commits, and keep Git operations explicit.**
 
-This is Edward Astill's personal fork of [CodeDiff](https://github.com/esmuellert/codediff.nvim), focused on viewing diffs and staging changes in Neovim. It retains upstream's VSCode-style diffs, live refresh, history, and conflict resolution without agent integrations or agent development scaffolding.
+This is Edward Astill's personal fork of [CodeDiff](https://github.com/esmuellert/codediff.nvim). Its default Git status view is a floating four-pane review workspace, not upstream's full-tab Explorer. It retains the VSCode-style diff engine, live refresh, revision/history views, and conflict resolution.
 
-CodeDiff stays synchronized with a changing repository, so review can continue as the code evolves. From the same workspace, you can stage or unstage hunks, files, and folders, review branches and pull requests, browse history, and resolve merge conflicts.
+Git review does not require an agent. The optional [OMP handoff](#send-a-hunk-to-omp) adds a selected hunk to your existing OMP draft only when requested; it never submits a model request automatically.
 
-<div align="center">
+## Quick start
 
-https://github.com/user-attachments/assets/3c66a26d-5ff9-4dac-8035-a2f2b7bd2308
+After [installation](#installation), save your file edits and run `:CodeDiff` inside a Git repository.
 
-</div>
+1. Press `h` for review shortcuts; press `h` again to return.
+2. In **Unstaged**, use `i`/`k` or arrows to choose a file, then Enter to preview it.
+3. Use Tab to focus a numbered diff pane and `[`/`]` to select a hunk. Press `s` to stage it. For an entire file or folder, use `s` on its row in the tree instead.
+4. Inspect **Staged** before committing. Press `c`, check the displayed HEAD, type a message, then Ctrl-s to commit the index.
+5. Press `q` to close review and restore your editor's keys and chrome.
+
+Need to undo a choice? [Unstage and revert are different](#stage-unstage-and-revert). Other tasks: [stash](#stash-tracked-changes), [branches/worktrees](#inspect-branches-and-worktrees), [OMP](#send-a-hunk-to-omp), [troubleshooting](#safety-and-troubleshooting), and [upgrading](#upgrading-this-fork). `:CodeDiff help` works without opening a review; `:help codediff` opens the full manual.
 
 ## Features
 
 - **Live review:** Diffs stay synchronized with repository changes while you edit.
 - **VSCode style diffs:** Review side-by-side or inline changes with line- and character-level highlighting.
-- **Git staging:** Inspect, stage, and unstage hunks, files, or entire folders from one review workspace.
+- **Four-pane review:** Unstaged above Staged on the narrow left; numbered Before and After diffs beside them.
+- **Git staging:** Stage or unstage individual hunks, files, or folders. Revert restores working-file content independently of the index.
 - **Repository actions:** Commit the index, stash tracked changes, and inspect local branches or worktrees in separate popups.
-- **Complete workflows:** Review local changes, staged changes, revisions, pull requests, and history.
+- **Explicit OMP handoff:** Add the selected hunk with an optional message to an existing draft; ordinary Git review stays independent.
+- **Other comparison modes:** Review revisions, pull requests, and history in native tab layouts.
 - **Focused navigation:** Move between files and hunks, fold unchanged code, and track moved blocks.
 - **Conflict resolution:** Resolve merge conflicts per block or across the whole file.
 - **Editor-native context:** Keep Tree-sitter syntax highlighting in revision buffers.
@@ -27,7 +35,7 @@ https://github.com/user-attachments/assets/3c66a26d-5ff9-4dac-8035-a2f2b7bd2308
 
 ### Prerequisites
 
-- Neovim 0.7 or newer; 0.10 or newer is recommended
+- Neovim 0.10 or newer: the review UI uses `vim.system()` and floating-window footers
 - Git for repository workflows
 - `curl` or `wget` on Unix, or PowerShell on Windows, for automatic downloads
 - A Nerd Font is optional for the default Explorer folder icons
@@ -43,6 +51,8 @@ https://github.com/user-attachments/assets/3c66a26d-5ff9-4dac-8035-a2f2b7bd2308
   cmd = "CodeDiff",
 }
 ```
+
+To add a launcher, include `keys = { { "<leader>d", "<cmd>CodeDiff<cr>", desc = "Review changes" } }` in the plugin spec. This is Space d only if your leader is Space. Install [EdwardAstill/omp.nvim](https://github.com/EdwardAstill/omp.nvim) separately if you want the optional `o` handoff; no OMP dependency is needed for Git actions.
 
 ### Automatic installation
 
@@ -124,6 +134,8 @@ Both methods automatically place the library in the plugin root directory.
 
 ## Configuration
 
+The full reference below includes settings for native revision/history/inline views. The status popup deliberately fixes its four-pane arrangement, narrow tree sizing, tree view mode, numbering, and [review controls](#review-controls); native `explorer.width`, `position`, `view_mode`, and `keymaps.view`/`keymaps.explorer` bindings are not a popup-layout editor. Setting `diff.layout = "inline"` opts into a native inline status view instead of the popup.
+
 <details>
 <summary><strong>Full configuration reference</strong></summary>
 
@@ -184,25 +196,25 @@ Both methods automatically place the library in the plugin root directory.
 
     -- Explorer panel configuration
     explorer = {
-      position = "left",  -- "left" or "bottom"
+      position = "left",  -- Native Explorer: "left" or "bottom"; popup placement is fixed
       hidden = false,  -- Initial visibility state
-      width = 40,         -- Width when position is "left" (columns)
-      height = 15,        -- Height when position is "bottom" (lines)
-      auto_refresh = true,  -- Native file watching with polling fallback (R still refreshes manually)
+      width = 40,         -- Native Explorer width (columns); popup uses its own narrow sizing
+      height = 15,        -- Native bottom Explorer height (lines)
+      auto_refresh = true,  -- Native file watching with polling fallback; native Explorer also has R
       indent_markers = true,  -- Show indent markers in tree view (│, ├, └)
       initial_focus = "explorer",  -- Initial focus: "explorer", "original", or "modified"
       icons = {
         folder_closed = "\u{e5ff}", -- Nerd Font folder icon
         folder_open = "\u{e5fe}",   -- Nerd Font open-folder icon
       },
-      view_mode = "list",    -- "list" or "tree"
+      view_mode = "list",    -- Native Explorer: "list" or "tree"; popup always uses trees
       flatten_dirs = true,   -- Flatten single-child directory chains in tree view
       file_filter = {
         ignore = { ".git/**", ".jj/**" },  -- Glob patterns to hide (e.g., {"*.lock", "dist/*"})
       },
       untracked = "all",  -- Untracked scan: "all", "normal" (collapse dirs), or "no" (skip; use for huge work trees like GIT_WORK_TREE=$HOME that hang, #389)
       focus_on_select = false,  -- Jump to modified pane after selecting a file (default: stay in explorer)
-      auto_open_on_cursor = false, -- Rebind j/k/Down/Up in the explorer to also open the file under the cursor
+      auto_open_on_cursor = false, -- Preview on cursor movement; popup uses i/k/Up/Down
       status_right_margin = 1,  -- Trailing cells between status symbol (M/A/D) and right edge; increase if Nerd Font icons clip it
       line_stats = {
         enabled = false,         -- Fetch and show Git line statistics
@@ -244,8 +256,8 @@ Both methods automatically place the library in the plugin root directory.
         prev_file = "[f",   -- Previous file in explorer/history mode
         diff_get = "do",    -- Get change from other buffer (like vimdiff)
         diff_put = "dp",    -- Put change to other buffer (like vimdiff)
-        open_in_prev_tab = "gf", -- Open file outside diff; a popup returns to the originating editor
-        close_on_open_in_prev_tab = false, -- Close a revision tab after gf; popups always close
+        open_in_prev_tab = "gf", -- Open file in the previous tab
+        close_on_open_in_prev_tab = false, -- Close the native diff tab after gf
         toggle_stage = "-", -- Stage/unstage selected file or folder
         toggle_staged_view = "gS", -- Swap between staged/unstaged view of current file (#352)
         stage_hunk = "<leader>hs",   -- Stage hunk under cursor to git index
@@ -313,9 +325,11 @@ Both methods automatically place the library in the plugin root directory.
 
 </details>
 
-### Keymaps
+### Native keymap configuration
 
-Each keymap action accepts a single key or a list of keys:
+These configurable actions apply to native revision/history/inline views, not the fixed popup key layer. Press `g?` in a native view, or use `:CodeDiff help`, to see its active bindings. `o` is also available on native diff buffers for the optional OMP handoff.
+
+Each configurable action accepts a single key or a list of keys:
 
 ```lua
 keymaps = { view = { quit = { "q", "<Esc>" } } }
@@ -380,7 +394,7 @@ require("codediff").setup({
 
 ### Gutter signs
 
-Gutter signs are disabled by default and require Neovim 0.10 or newer. Enable them under `diff`:
+The optional `+`/`-` gutter renderer is disabled by default. It is separate from the popup's always-available `>` active-hunk markers and numbered diff panes. Enable additional gutter signs under `diff`:
 
 ```lua
 gutter_signs = {
@@ -400,7 +414,7 @@ gutter_signs = {
 }
 ```
 
-Changed signs use priority `100` by default, so they remain visible. CodeDiff does not modify `signcolumn` or `statuscolumn`. This example reserves one sign column and places signs after line numbers:
+Changed signs use priority `100` by default, so they remain visible. This renderer does not configure `signcolumn` or `statuscolumn`; the popup has its own window presentation. For native views, this example reserves one sign column and places signs after line numbers:
 
 ```lua
 vim.opt.signcolumn = "yes"
@@ -413,41 +427,124 @@ With one sign column, the blank priority-`7` sign hides signs with lower priorit
 
 Use `:CodeDiff` to review repository changes, pull requests, files, directories, and history.
 
-### Review Repository Changes
+### Review workspace
 
-#### Working Tree and Revisions
+With the default side-by-side layout, `:CodeDiff` opens a popup in the **current tab**, including in a clean repository. **Unstaged** is top-left and **Staged** bottom-left; **Before** is in the middle and **After** on the right. A file may appear in both trees when it has both staged and unstaged changes.
 
-`:CodeDiff` opens a floating review workspace, even in a clean repository: narrow **Unstaged** and **Staged** trees on the left, with numbered **Before** and **After** diffs in the middle and right. Normal editor chrome is hidden until you leave review.
+The left trees have no line numbers; the diff panes have absolute line numbers. The normal statusline/mode area is hidden while review is active, with compact hints in the borders. Leaving or closing the popup restores editor chrome. This is a local review keymap layer, not a new Vim editing mode.
 
-| Key | Review action |
+Enter previews a file; it does not open that file for ordinary editing. Use Tab/Shift-Tab to move between panes. In a diff, the cursor chooses the hunk: `>` gutter markers, emphasized numbers, and `Hunk N/M` identify it in both panes. The selection remains visible while an action dialog is open. Moving into a tree leaves no active diff hunk; `r` and `o` belong to diff panes, not file rows.
+
+Added/deleted files can be one-sided comparisons. A conflict adds a Result pane and uses conflict-resolution actions; ordinary Revert does not resolve merge conflicts.
+
+#### Review controls
+
+| Focus | Key | Action |
+| --- | --- | --- |
+| Workspace | `q` / `Ctrl-q` | Close review and restore ordinary editor controls |
+| Workspace | `h` / `:CodeDiff help` | Show shortcuts; `h` closes the help popup |
+| Workspace | `Ctrl-s` / `Ctrl-Shift-s` | Show help, **not** write a file |
+| Workspace | `Tab` / `Shift-Tab` | Next / previous pane |
+| Workspace | `i` / `k` | Move up / down |
+| Workspace | `[` / `]` | Previous / next hunk |
+| Trees | Up / Down | Move up / down |
+| Trees | `j` / `l` | Collapse / expand folder; `l` also previews a file |
+| Trees | Enter / double-click | Preview file or toggle folder/group |
+| Trees | `s` | Stage/unstage the selected file or directory |
+| Trees | `S` / `U` | Stage / unstage all changes in the repository |
+| Diffs | `j` / `l` | Move left / right |
+| Diffs | `s` | Stage an unstaged hunk or unstage a staged hunk |
+| Diffs | `r` | Confirm Revert of the working-file hunk to its comparison baseline |
+| Diffs | `o` | Compose an optional message for the selected hunk's OMP handoff |
+| Workspace | `c` | Commit message popup |
+| Workspace | `z` | Confirm tracked-change stash |
+| Workspace | `b` / `w` | Separate read-only local branch / worktree lists |
+
+Child dialogs have their own controls: `q`/Escape/Ctrl-q close read-only lists; `y` confirms a destructive action and `n` cancels it. Commit and OMP composers start in Insert mode. **Ctrl-q cancels a composer**; Escape first leaves Insert mode rather than necessarily closing it. Normal-mode `q` or Escape then closes it. Closing a draft discards that draft text.
+
+#### Stage, unstage, and revert
+
+The default status popup uses these comparisons:
+
+| Selected group/view | Before (original) | After (modified) | What Revert restores in the working file |
+| --- | --- | --- | --- |
+| Unstaged | Git index | Working file | The index version of the hunk |
+| Staged | HEAD | Git index | The HEAD version of the hunk |
+| Native revision vs working tree | Requested Git revision | Working file | That requested revision's hunk |
+| Added file with no original version | Empty file | Added content | Removes the selected addition |
+
+- **Stage** changes the index, preparing content for the next commit. In a tree, `s` operates on the whole file/directory; in a diff, it operates on the cursor's hunk.
+- **Unstage** in the Staged tree/diff changes the index back toward HEAD and keeps working-file edits. It does not undo the edit in the file.
+- **Revert** changes the working file back to Before and **never changes the index**. Confirm the named baseline with `y`; cancel with `n`, `q`, Escape, or Ctrl-q.
+
+Consequently, reverting a staged hunk can leave the file in **both** trees: the staged version is still ready to commit, while the working file now differs from it. If you also want that staged change removed, unstage it separately and inspect both trees before committing.
+
+Use the default status view, or native inline status, for staging decisions. A comparison against an arbitrary revision is not the same as the normal index-versus-working-file comparison. Revert is available for working-tree/staged comparisons with a Git baseline, not two immutable commits, non-Git file comparisons, or merge views.
+
+File/folder staging reads on-disk paths; hunk staging can stage the displayed buffer content without saving it. Save first if you want the disk and index to represent the same edit. A directory action targets the whole path, and `S`/`U` target the repository—not just visible rows under a filter.
+
+Revert preserves unrelated hunks and the file's line endings. It refuses unsaved target buffers, changed comparisons, stale file/index state, renamed comparisons, or overlapping working edits it cannot safely match. Do not force it through a refusal: save or inspect the file, refresh/reopen review, and select the hunk again. Unstaged edits discarded by Revert may not be recoverable by Git.
+
+#### Commit staged changes
+
+1. Inspect the **Staged** tree; the commit includes the index, not just the selected file.
+2. Press `c`. The title shows the current branch and short HEAD, or detached/unborn HEAD; it is not a branch picker and is not part of the message.
+3. Type a message, including multiple lines if needed.
+4. Ctrl-s submits from Insert or Normal mode. Normal-mode `s` is also a submit shortcut inside this dialog.
+
+CodeDiff never auto-stages. An empty message, empty index, changed HEAD, or Git/hook failure blocks the commit; errors retain the draft while the dialog remains open. If HEAD changed, cancel and reopen to review the new target. Cancel before submitting to avoid a commit; closing a dialog is not an undo for a Git operation already started.
+
+#### Stash tracked changes
+
+Press `z` and inspect the confirmation's HEAD. `y` runs a normal `git stash push`: it saves **both staged and unstaged tracked changes**, then resets the index and tracked working files to HEAD. Untracked files stay in place.
+
+Stash refuses unsaved tracked buffers, including buffers for staged-deleted files, changed HEAD, or an unborn HEAD. Clean affected buffers reload; edits made while Git runs are not overwritten. There is no stash-message composer or stash list/apply/pop/drop interface here; use Git or your normal Git client to restore a stash.
+
+#### Inspect branches and worktrees
+
+`b` lists **local** branches, marking the current branch and showing short commit IDs and subjects. `w` separately lists worktree paths, branches/HEADs, and applicable detached/bare/locked/prunable details. Use `i`/`k` to move through these read-only lists and `q`, Escape, or Ctrl-q to close.
+
+Neither list switches checkout, creates/deletes branches or worktrees, or changes the commit dialog's HEAD. The actions remain available when the repository has no changes.
+
+#### Send a hunk to OMP
+
+Install/configure [EdwardAstill/omp.nvim](https://github.com/EdwardAstill/omp.nvim) separately; normal review does not start or require it.
+
+1. Focus either diff pane and select the hunk with the cursor or `[`/`]`.
+2. Press `o`. The composer captures that hunk before taking focus.
+3. Type an optional message, or leave it blank to send only the hunk.
+4. Ctrl-s adds the message, repository/file paths, comparison revisions, line ranges, and before/after hunk text to the **selected OMP session's existing draft**.
+5. OMP opens above review. Inspect/edit the draft and press Enter **in OMP** only when you want to submit it. Ctrl-q hides OMP and returns to the originating diff pane.
+
+The handoff sends neither the whole file nor unrelated hunks. It preserves existing draft text and uses the captured snapshot, even if the review later changes. Ctrl-q in the composer cancels without sending. Missing OMP or an immediate failed send keeps the composer for retry; later bridge errors are reported by OMP. Queueing a draft is not a model response or a guarantee that an asynchronous delivery succeeded.
+
+`o` also works in native diff views. An OMP proposal's **Reject** action belongs to OMP proposal review; it is not CodeDiff's Git Unstage or working-file Revert.
+
+#### Safety and troubleshooting
+
+| Symptom | What to do |
 | --- | --- |
-| `h` / `:CodeDiff help` | Show shortcuts |
-| `Tab` / `Shift-Tab` | Cycle panes |
-| `i` / `k`, arrows | Move up / down |
-| `j` / `l` in trees | Collapse / expand folder or select file |
-| `Enter` in trees | Preview file / toggle folder |
-| `s` | Stage/unstage selected file or folder in trees; current hunk in diffs |
-| `S` / `U` in trees | Stage / unstage everything |
-| `[` / `]` | Previous / next hunk |
-| `r` in diffs | Confirm reverting the selected working-file hunk to LEFT |
-| `o` in diffs | Compose an optional message and add the selected hunk to OMP's draft |
-| `c` | Commit popup: current HEAD and editable message; `Ctrl-s` submits |
-| `z` | Confirm stash of tracked changes; untracked files stay in place |
-| `b` / `w` | Separate read-only local branch / worktree lists |
-| `q` / `Ctrl-q` | Close review and restore the editor |
+| A save key opens help | Expected in review. Close with `q`, save the actual file in the editor, then reopen. Trees/help/dialogs are scratch buffers. |
+| No hunk selected | Preview a file, Tab into a numbered diff, and move onto a change. A highlighted tree row is not a hunk selection. |
+| Revert/stash refuses unsaved changes | Save or otherwise resolve those edits outside review first; the action will not silently write or discard them. |
+| A hunk changed while confirmation was open | Reopen/refresh the comparison and select it again; do not apply an old patch to new content. |
+| A reverted staged change is still listed | Revert left the index intact. Unstage separately if it must not be committed. |
+| An added/deleted side is blank | This is a one-sided comparison, not a missing preview. |
+| Commit failed | Keep the dialog open to retain the message, fix the reported Git error, and retry; reopen if HEAD changed. |
+| No changes are listed | The popup still supports commit/stash checks and branch/worktree inspection. Check repository/path filters and the selected group. |
+| OMP did not answer | Handoff adds a draft only. Inspect it in OMP and submit manually; check any bridge error before retrying. |
+| Old keys or names remain after updating | Restart Neovim so cached plugin modules and personal mappings reload. |
 
-The active hunk has `>` gutter markers, emphasized line numbers, and a `Hunk N/M` footer. Its selection stays visible while confirming a revert.
+The popup preserves unsaved buffers when closing or changing files; it is not a save operation. Explicit `:write` and custom edit commands are not a read-only sandbox. Live refresh is enabled by default; if disabled, reopen the popup to reread repository state (native Explorer also has `R`).
 
-**Unstage is not revert.** `s` in a staged view changes Git's index and keeps working-file edits. `r` restores only the selected hunk in the working file to the LEFT comparison: the index in an unstaged view, HEAD in a staged view, or the explicit revision being compared. The index stays unchanged, so a staged version remains staged until you unstage it. Revert and stash refuse unsaved affected buffers; save in the editor first. Revert also refuses renamed comparisons and conflicting working edits rather than overwriting them. Unstaged working edits may not be recoverable by Git.
+### Revisions and repository commands
 
-With [omp.nvim](https://github.com/EdwardAstill/omp.nvim) installed, `o` opens a message composer for the captured hunk. `Ctrl-s` adds the optional message, paths, comparison revisions, and only that hunk to the selected OMP session's existing draft; a blank message sends the hunk alone. It never submits the prompt automatically. `Ctrl-q` cancels the composer; inside OMP it returns to the source diff pane. Failed handoffs keep the composer for retry. `o` also works in native revision views.
+Explicit revisions, `--staged`, history, file/directory comparisons, and inline status use native tab layouts with configurable keymaps. `:CodeDiff --inline`, or `diff.layout = "inline"`, opts out of the four-pane popup. Native views use `g?`/`:CodeDiff help`, not the popup's `h`/`c`/`z`/`b`/`w` layer. Their default revert mapping is `<leader>hr`; the personal dotfiles map it to `r`. `o` remains a diff-buffer handoff.
 
-Commits never auto-stage. Their popup shows only the current HEAD and your message, retains drafts after Git errors, and refuses submission if HEAD changed. `Ctrl-q` cancels a dialog. Branch/worktree lists never switch your checkout. Review keymaps are local to the workspace; normal save keys return when it closes. Conflict files add a Result pane.
-
-Explicit revision comparisons, history, and `--inline` retain their existing tab layouts:
+In the popup, Before is physically left of After. In native views, `diff.original_position` can move the original pane; the Revert baseline still means the **original** comparison version.
 
 ```vim
-" Show repository status in the Explorer
+" Open the four-pane status popup
 :CodeDiff
 
 " Compare a revision with the working tree
@@ -486,7 +583,7 @@ Review only changes in the Git index:
 :CodeDiff --staged HEAD~3
 ```
 
-`--cached` is an alias for `--staged`. In the default Explorer, `gS` switches between the staged and unstaged versions of a file that appears in both groups.
+`--cached` is an alias for `--staged`. In the popup, choose the file in the separate Staged or Unstaged tree. Native status Explorer views instead support configurable `gS` to switch the current file between its staged and unstaged versions.
 
 #### Pull Requests
 
@@ -698,6 +795,17 @@ vim.api.nvim_create_autocmd("User", {
 ```
 
 </details>
+
+## Upgrading this fork
+
+- The default `:CodeDiff` status workflow is now a same-tab popup. Revision/history/file/directory views remain native tabs; opt into native status with `--inline`.
+- The popup uses the [fixed review controls](#review-controls). Old native keys such as `gS`, `g?`, `t`, and configured `<leader>h…` actions are not its control scheme. `gf` is a native-view action, not a popup shortcut.
+- The old **Reject** label is now **Revert**. It restores the working-file hunk to its comparison baseline and does not unstage it.
+- Rename custom `keymaps.view.discard_hunk` settings to `keymaps.view.revert_hunk`; the old key has no compatibility alias. This config controls the native mapping; popup `r` is fixed.
+- `s` is stage/unstage inside review. Ctrl-s is help in the workspace, commit submission in the commit composer, and draft handoff in the OMP composer—not a universal save action.
+- OMP is an optional, explicit draft handoff. Existing OMP proposal accept/reject commands have not been renamed.
+
+After updating this fork or its personal configuration, restart Neovim. See the [current Git recipes](docs/git-integration.md) and [documentation index](docs/README.md); the development-history collection is not the current command reference.
 
 ## Development
 

@@ -6,6 +6,8 @@
 
 This folder documents the full development journey of codediff.nvim, from initial MVP through achieving VSCode algorithm parity and building a full-featured Neovim plugin.
 
+This is a historical collection, not the current user manual. Old `vscode-diff` module names, tab layouts, keymaps, and proposed features are retained as development history. For this fork's popup workflow and current commands, use the [documentation index](../README.md) or [review guide](../../README.md#review-workspace).
+
 ---
 
 ## 📖 Reading Paths

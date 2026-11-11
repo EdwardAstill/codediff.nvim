@@ -1,5 +1,7 @@
 # Git Status Explorer Mode
 
+> Historical design note. The current fork uses a four-pane status popup; the module names and workflow below are not its public API. See the [current Git guide](../../git-integration.md) and [review controls](../../../README.md#review-controls).
+
 ## Overview
 
 The CodeDiff explorer mode provides a VSCode-like interface for viewing git changes with a left sidebar showing all modified files and a side-by-side diff view.

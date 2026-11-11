@@ -1,9 +1,15 @@
 # Documentation
 
-## Using the Plugin
+## Current user guides
 
-- **[git-integration.md](git-integration.md)** — Compare files with any git revision (`:CodeDiff HEAD`, `:CodeDiff main`, etc.)
-- **[performance.md](performance.md)** — Timeout control for large files and how the two-phase diff balances speed vs. detail
+- **[Quick start](../README.md#quick-start)** — Open review, stage a hunk, inspect the index, and commit.
+- **[Review workspace and controls](../README.md#review-workspace)** — Four-pane popup, selection, scoped keys, repository dialogs, and normal editing restoration.
+- **[Stage, unstage, and revert](../README.md#stage-unstage-and-revert)** — What changes in the index versus the working file.
+- **[OMP handoff](../README.md#send-a-hunk-to-omp)** — Selected hunk plus optional message; draft-only, never auto-submit.
+- **[git-integration.md](git-integration.md)** — Choose the correct comparison, handle mixed staged/unstaged changes, and use revision/history commands.
+- **[Neovim help](../doc/codediff.txt)** — Installed manual: `:help codediff`; popup shortcut lookup: `:CodeDiff help`.
+- **[Upgrade notes](../README.md#upgrading-this-fork)** — Popup/native differences and the `discard_hunk` → `revert_hunk` migration.
+- **[performance.md](performance.md)** — Timeout control for large files and two-phase diff computation.
 
 ## Building & Contributing
 
@@ -19,6 +25,6 @@
 
 ## Development History
 
-For the full story of building codediff.nvim — algorithm development, parity evaluations, architecture decisions:
+These are archived implementation notes, not the current UI, keybinding, module, or command contract. They may describe old names, layouts, and features that have since shipped. Use the guides above for this fork's current behavior.
 
-- **[development/](development/)** — 14 months of development logs organized into narrative reading paths
+- **[development/](development/)** — Algorithm development, parity evaluations, and earlier architecture decisions.

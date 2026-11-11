@@ -1,65 +1,285 @@
 codediff.nvim                                 *codediff.txt* *codediff.nvim* *codediff*
 
-This personal fork of CodeDiff focuses on viewing diffs and staging changes
-in Neovim. It keeps repository changes synchronized while you inspect diffs,
-stage or unstage hunks, files and folders, review history, and resolve conflicts.
+This fork provides Git review, staging, revision comparisons, history, and
+conflict resolution in Neovim. Ordinary Git review does not need OMP; sending a
+hunk to an existing OMP draft is an optional, explicit handoff.
 
-This help file is usage-focused. For installation, build, and development
-details, see README.md.
+CONTENTS                                                   *codediff-contents*
+
+  Start here                 |codediff-requirements| |codediff-quickstart|
+  Review panes and focus     |codediff-popup|
+  Popup shortcuts            |codediff-popup-keys|
+  Selecting a hunk           |codediff-hunks|
+  Stage, unstage, revert     |codediff-staging| |codediff-revert|
+  Commit, stash, lists       |codediff-repository|
+  Send a hunk to OMP         |codediff-omp|
+  Safety and normal editing |codediff-safety|
+  Native comparison tabs    |codediff-native|
+  Commands and examples     |codediff-commands| |codediff-usage|
+  Configuration             |codediff-configuration|
+  Signs and colors          |codediff-gutter-signs| |codediff-highlight-groups|
+  Lua and events            |codediff-lua-api| |codediff-events|
+  Migration                 |codediff-migration|
+
+REQUIREMENTS                                            *codediff-requirements*
+
+Use Neovim 0.10 or newer: this fork uses vim.system(), vim.fs APIs, and floating
+window footers. The old Neovim 0.7 compatibility claim does not apply to these
+workflows. Git is required for repository operations. See README.md for the
+native diff library, installation, and build requirements.
 
 ==============================================================================
-QUICK START                                           *codediff-quickstart*
+FIRST REVIEW TO COMMIT                                    *codediff-quickstart*
 
-After installing the plugin and running |:CodeDiff|, you can:
-- Browse changed files (default explorer)
-- Compare the current file with a git revision
-- Review a pull request without checking it out
-- Compare two files or directories
+1. Save the files you want to review in the ordinary editor. Open a file in
+   your repository, then run:
+>vim
+     :CodeDiff
+<
+   To choose a different repository, use |codediff-repo|.
+2. In Unstaged, move with i/k; expand a folder with l and press Enter on a
+   file. Before shows the index; After shows your working file.
+3. Press Tab until a diff pane has focus. Move onto a changed block with ].
+   Check the > markers and Hunk N/M footer before acting.
+4. Press s in that diff pane to stage only that hunk. To stage a whole file
+   or folder instead, focus its tree row and press s there.
+5. Focus Staged and select the file to inspect what will be committed.
+   Pressing s on a staged hunk unstages it without removing working edits.
+6. Press c, read the branch/HEAD shown in the title, and type a commit message.
+   Ctrl-s commits the existing index only; it does not stage remaining edits.
+   Ctrl-q cancels the message dialog. See |codediff-repository|.
+7. Press q in the workspace to return to your original editor.
 
-The default status view is a popup in the current tab, including clean repos.
-Narrow Unstaged and Staged trees sit on the left; numbered Before and After
-diffs occupy the middle and right. The bottom statusline is hidden in review.
+To throw away working-file changes, read |codediff-revert| first. Unstage and
+Revert are different operations; Revert is not an alternative spelling of
+Unstage.
 
-  h / :CodeDiff help  Show shortcuts (the command also works outside review)
-  Tab / Shift-Tab    Cycle panes
-  i / k, arrows      Move up / down
-  j / l              Collapse / expand folder or select file (trees)
-  Enter              Preview file / toggle folder (trees)
-  s                  Stage/unstage file or folder (trees), current hunk (diffs)
-  S / U              Stage / unstage everything (trees)
-  [ / ]              Previous / next hunk
-  r                  Confirm reverting working-file hunk to LEFT (diffs)
-  o                  Add selected hunk and optional message to OMP draft (diffs)
-  c                  Commit message popup, showing current HEAD
-  z                  Confirm stash of tracked changes; keep untracked files
-  b / w              Separate read-only branch / worktree lists
-  q / Ctrl-q         Close popup and restore the underlying editor
+==============================================================================
+REVIEW WORKSPACE                                             *codediff-popup*
 
-Active hunks have > gutter markers, emphasized line numbers, and a Hunk N/M
-footer. Unstage changes only Git's index and keeps working edits. Revert restores
-the working-file hunk to LEFT: index for unstaged, HEAD for staged, or the
-explicit compared revision. The index stays unchanged; staged content remains
-staged. Revert refuses renamed comparisons and conflicting working edits.
-Revert/stash refuse unsaved affected buffers; save in the editor first.
-Unstaged working edits may not be recoverable by Git.
+With the default side-by-side layout, :CodeDiff opens a popup in the current
+tab, even when the repository is clean:
+>
+  +-------------+----------------------+----------------------+
+  | Unstaged    | Before               | After                |
+  |             |                      |                      |
+  +-------------+                      |                      |
+  | Staged      |                      |                      |
+  |             |                      |                      |
+  +-------------+----------------------+----------------------+
+<
+The left column is deliberately narrow; the two numbered diff panes take most
+of the width. Conflict files add a Result pane. The bottom editor statusline
+and other workspace chrome are hidden while review is active.
 
-With omp.nvim installed, o captures the hunk and opens an optional-message
-composer. Ctrl-s adds the message and hunk to the existing OMP draft without
-submitting; an empty message sends only the hunk. Ctrl-q cancels the composer.
-OMP opens above review; its Ctrl-q returns to the source diff pane. Failed
-handoffs retain the composer. o also works in native revision views.
+Default initial focus is the explorer (configurable with explorer.initial_focus).
+Selecting a file in a popup tree does not jump focus into its diff. Tab cycles
+Unstaged -> Staged -> Before -> After -> Result (when present), then wraps.
+Shift-Tab reverses the order. The tree row chooses the file; the cursor in a
+diff pane chooses the hunk. Closing a child dialog returns to its source pane.
 
-The commit popup enters message input; Ctrl-s commits only the index and
-Ctrl-q cancels. Git failures keep the draft. A changed HEAD blocks submission.
-Branch and worktree lists do not change the checkout. Normal editor keymaps
-return after review closes. Conflicts add a Result pane; revision, history
-and explicit inline views retain their tab layouts and configured mappings.
+Explicit revisions, history, --staged, file/directory comparisons, and --inline
+use native tabs instead: |codediff-native|. Setting diff.layout = "inline"
+also opts out of the status popup. Popup geometry and its fixed navigation
+are not controlled by native explorer sizing/layout/keymap options.
+
+POPUP SHORTCUTS                                         *codediff-popup-keys*
+
+These are Normal-mode keys in the status workspace, not ordinary Vim editing
+commands. Editable dialogs have their own submission keys.
+
+  Scope        Key                  Action
+  Workspace    q / Ctrl-q           Close review, restore editor
+               Tab / Shift-Tab      Next / previous pane
+               i / k                Move up / down
+               h                    Help
+               Ctrl-s / Ctrl-Shift-s Help, NOT save
+               c                    Commit dialog
+               z                    Confirm tracked-only stash
+               b / w                Local branch / worktree lists
+  Trees        Up / Down            Move up / down
+               j / l                Collapse / expand folder; l selects file
+               Enter / double-click Select file or toggle folder
+               s                    Stage/unstage file or folder
+               S / U                Stage / unstage all files
+  Diff panes   j / l                Move left / right
+               [ / ]                Previous / next hunk
+               s                    Stage/unstage cursor's hunk
+               r                    Confirm working-file Revert
+               o                    Compose OMP message for selected hunk
+
+:CodeDiff help also opens shortcuts outside review; in a native session it
+shows that session's configured mappings. Native gS/g?/t and keymaps.view or
+keymaps.explorer settings do not replace this fixed popup layer.
+
+HUNK SELECTION                                               *codediff-hunks*
+
+A hunk is a contiguous changed block computed by the diff engine. Place the
+cursor inside it in Before or After, or jump with [ / ]. The selected hunk has
+> gutter markers, emphasized line numbers on both sides, and a Hunk N/M footer.
+Hunk -/M means no hunk is selected. On a deletion-only side, its boundary line
+is the selection point.
+
+Selection means the cursor's whole hunk, not a Visual selection or an arbitrary
+set of highlighted lines. Popup s, r, and o act on that hunk. A tree row is not
+a hunk selection. If a refresh changes the comparison, select the hunk again.
+
+==============================================================================
+STAGE AND UNSTAGE                                          *codediff-staging*
+
+Git has three relevant states: HEAD (last commit), index (next commit), and
+worktree (files on disk).
+
+Stage copies selected working changes into the index. Unstage removes selected
+changes from the index while keeping the working file intact. Neither commits.
+In popup diffs, s stages from Unstaged and unstages from Staged. In trees it
+acts on the selected file/folder instead. A folder action targets its whole
+directory path, including changes hidden by presentation filters; S/U operate
+on the entire repository. Inspect Staged before committing after broad actions.
+
+File/folder staging reads disk; hunk staging can use unsaved buffer text without
+writing the file. Save first if the file, preview, and index should agree.
+
+REVERT WORKING-FILE HUNK                                    *codediff-revert*
+
+Popup r (diff panes only) restores the selected working-file hunk to the
+Before/original comparison baseline. Native tabs use the configured
+keymaps.view.revert_hunk, default <leader>hr. A native layout may reposition
+the original pane; Revert still uses its version, not a physical screen side.
+
+  Comparison                 Original         After       Revert target
+  Unstaged                   Index            Worktree    Index
+  Staged                     HEAD             Index       HEAD
+  Revision vs worktree       Given revision   Worktree    Given revision
+  --staged <revision>         Given revision   Index       Given revision
+  Two immutable revisions    First revision   Second rev  Not available
+  Merge/conflict             Merge sides      Result      Not available
+
+An absent original file is an empty baseline. The action writes the working
+file even when After displays the index. It NEVER changes the index. Thus
+reverting a staged hunk leaves that content staged and eligible for commit;
+the working file may now contain an opposite, unstaged change. To remove the
+change from the next commit too, unstage it separately.
+
+Example: stage a hunk, inspect it in Staged, then use r and confirm. Its working
+content returns to HEAD, but the Staged entry remains. Press s on that staged
+hunk to remove it from the index as well.
+
+Popup confirmations use y to accept; n, q, Esc, or Ctrl-q cancel. Native tabs
+use Neovim's Revert/Cancel prompt. Revert preserves unrelated hunks and the
+file's CRLF/no-final-newline state. It refuses stale comparisons, changed
+index/worktree state, unsaved affected buffers, renamed comparisons, or
+overlapping working edits it cannot safely match. Save in the editor and
+refresh/reselect rather than forcing a refused action.
+
+WARNING: discarded unstaged content may not be recoverable by Git.
+
+==============================================================================
+REPOSITORY ACTIONS                                     *codediff-repository*
+
+These actions require the Git status popup and affect its repository, not just
+the selected file. They are not branch/worktree management or stash browsing.
+
+Commit (c)~
+The editable dialog starts in Insert mode. Its title shows the current branch
+and short HEAD object ID; detached and unborn HEAD are supported. Type the
+message, then Ctrl-s in Insert or Normal mode to commit only the current index.
+Normal-mode s also submits. Nothing is automatically staged or saved.
+
+An empty message, empty index, or HEAD change blocks submission. Git and hook
+errors keep the message for correction/retry while the dialog stays open. If
+HEAD changed, copy any needed message, cancel, and reopen the dialog. Ctrl-q
+cancels from Insert or Normal mode; cancelling/closing discards this scratch
+message. These drafts are not persistent commit-message storage.
+
+Stash (z)~
+Confirm with y to run a tracked-only stash: staged and unstaged tracked changes
+are saved, then index and tracked working files reset to HEAD. Untracked files
+remain in place. An unborn HEAD or changed HEAD blocks the operation.
+
+Unsaved tracked buffers block stash, including buffers for staged deletions.
+Clean affected buffers reload safely afterward; if a buffer becomes modified
+while Git runs, its unsaved edits are retained and a warning is shown. Read any
+reload error: Git may have succeeded even if an editor buffer could not reload.
+There is no stash picker, pop, or apply action; use Git outside this UI.
+
+Read-only lists (b / w)~
+b lists LOCAL branches with current-branch marker, short object ID, and subject.
+w separately lists worktree paths, branch/HEAD information, and available
+detached/bare/locked/prunable flags. Use i/k to move; q, Esc, or Ctrl-q closes.
+Neither list switches, creates, or deletes branches/worktrees.
+
+==============================================================================
+OPTIONAL OMP HANDOFF                                           *codediff-omp*
+
+Install EdwardAstill/omp.nvim separately and select an existing OMP session.
+CodeDiff requires its require("omp").send(text) API, which appends to that
+session's draft and reports whether the handoff was queued. OMP's session/
+bridge setup remains OMP's responsibility; it is not needed for Git review.
+
+1. Place the cursor on a hunk in a diff pane and press o. This also works in
+   native comparison tabs; o is a fixed diff-buffer binding there too.
+2. The optional-message composer starts in Insert mode. For example, type:
+   "Explain the error-handling change in this hunk."
+3. Press Ctrl-s to add the message plus captured hunk to the selected OMP
+   session's existing draft. Leave the message blank to add the hunk alone.
+4. OMP opens above the review workspace. Inspect/edit the combined draft there
+   and submit it yourself if desired. CodeDiff NEVER submits it to the model.
+   OMP's Ctrl-q returns to the originating diff pane while it still exists.
+
+The capture contains repository and file paths, before/after revisions, line
+ranges, and changed hunk text, not the entire file. It is captured before the
+composer opens; cancelling with Ctrl-q sends nothing. Existing OMP draft text
+is preserved.
+Check the selected OMP session before handing off: it can belong to another
+project, and CodeDiff does not retarget it to the reviewed repository.
+
+Missing OMP, a thrown error, or immediate rejection keeps the message and hunk
+in the composer for retry. A successful send only acknowledges queueing:
+asynchronous bridge failures are reported by OMP, not recovered by CodeDiff's
+composer. Check OMP before retrying a queued handoff to avoid duplicate text.
+
+==============================================================================
+SAFETY AND RETURN TO EDITING                                *codediff-safety*
+
+Close the status popup to restore the underlying window/view, editor chrome,
+and ordinary mappings. Switching files or closing review must not abandon
+unsaved user buffers. No review shortcut is a universal file-save key.
+
+In the author's personal configuration, Space d opens review, s saves only
+outside review, and o is word-end only outside review. These are not plugin
+defaults. In review, use |codediff-popup-keys|; in message dialogs Ctrl-s means
+Commit or Add to OMP draft, never write the source file. Save source changes in
+the ordinary editor before retrying a refused destructive action.
+
+That personal configuration also suspends trailing-blank-line normalization
+for ALL CodeDiff sessions, including native tabs, and resumes it for ordinary
+editing. This is a user autocmd policy, not a CodeDiff formatting feature.
+
+==============================================================================
+NATIVE COMPARISON TABS                                      *codediff-native*
+
+Revision comparisons, history, PRs, file/directory comparisons, --staged, and
+inline layouts keep native full-tab views and configured keymaps. Do not apply
+the popup movement/save/repository-action keys to them.
+
+Defaults include ]c/[c for hunks, ]f/[f for files in explorer/history, g? for
+help, t for layout, and q to close the diff tab. Native explorer gS switches
+the selected file between staged/unstaged views when applicable; - toggles
+file staging. Diff buffers use <leader>hs to stage a hunk, <leader>hu to unstage,
+and <leader>hr to Revert (subject to |codediff-revert|). o remains the fixed OMP
+handoff binding. Use :CodeDiff help to see active configured keys.
+
+Ordinary immutable revision buffers are read-only. Working-file panes are real
+buffers; do not assume every comparison pane is immutable. Native do/dp
+diff-get/put and conflict acceptance are separate buffer-editing operations,
+not substitutes for the confirmed, index-preserving Revert action.
 
 ==============================================================================
 COMMANDS                                                  *codediff-commands*
 
-:CodeDiff [args]
-    Open the CodeDiff UI. See |codediff-usage| for available modes.
+:CodeDiff [args]                                                  *:CodeDiff*
+    Open status review or a comparison. See |codediff-usage| for modes.
 
 :CodeDiff help
     Show review shortcuts, or the active revision/history view's keymaps.
@@ -71,14 +291,29 @@ COMMANDS                                                  *codediff-commands*
 ==============================================================================
 USAGE                                                       *codediff-usage*
 
-File explorer mode (git status by default):
+Status review (same-tab popup with the default layout):
 >vim
   :CodeDiff
+<
+
+Native revision explorers (new tabs):
+>vim
   :CodeDiff HEAD~5
   :CodeDiff main
   :CodeDiff abc123
   :CodeDiff main HEAD
 <
+One revision compares that baseline with the working tree; two revisions
+compare immutable Git content. Neither form checks out the revision.
+
+Explicit layout for this invocation:
+>vim
+  :CodeDiff --inline
+  :CodeDiff --side-by-side main HEAD
+<
+--inline uses a native tab, including for status. --side-by-side without
+revisions uses the status popup. See |codediff-native| for key scope.
+
 
 Target another repository (explorer and history modes):   *codediff-repo*
 >vim
@@ -134,10 +369,10 @@ Show only staged changes:                                  *codediff-staged*
   :CodeDiff --staged           " index vs HEAD (--cached is an alias)
   :CodeDiff --staged HEAD~3    " index vs another revision
 <
-Inside the default `:CodeDiff` explorer, `gS`
-(`keymaps.view.toggle_staged_view`) jumps between the staged and unstaged
-view of the current file (#352).
-
+These open native tabs. In a native status explorer (for example,
+:CodeDiff --inline), gS (keymaps.view.toggle_staged_view) switches the current
+file's staged/unstaged view. The popup instead has separate trees; see
+|codediff-popup|.
 
 Git diff mode (current buffer vs revision):
 >vim
@@ -155,10 +390,10 @@ Requirements:
 - Git revision must exist
 
 Behavior:
-- Left buffer: git revision (readonly)
-- Right buffer: current buffer (readonly)
-- Opens in a new tab
-- Async operation (won't block Neovim)
+- One revision: original Git content against the working-file buffer
+- Two revisions: immutable Git content on both sides
+- Opens in a new native tab with asynchronous Git loading
+- See |codediff-native| for keymaps and working-buffer safety
 
 File comparison mode:
 >vim
@@ -217,6 +452,12 @@ Git merge tool:
 ==============================================================================
 CONFIGURATION                                        *codediff-configuration*
 
+The configuration below is a reference for native layouts and rendering.
+The popup has fixed pane geometry and the key layer in |codediff-popup-keys|;
+native explorer.position/width/height and keymaps settings do not remap that
+layer. Rendering options still apply where supported. In particular,
+diff.layout = "inline" selects native tabs, not an inline popup.
+
                                                       *codediff-layout*
 Diff layout~
 
@@ -270,17 +511,17 @@ When enabled:
 - Moved lines get a distinct background highlight (CodeDiffLineMove)
 - Sign column shows box-drawing characters (┌│└) marking the moved block
 - Annotation lines (⇄ moved: L3-8 → L11-16) appear above each moved block
-- Press `gm` on a moved block to temporarily align it with its counterpart
+- In native side-by-side tabs, press gm to align a moved block with its pair
 
-The `gm` keymap disables scrollbind and positions both panes so the moved
+The native gm keymap disables scrollbind and positions both panes so the moved
 block appears at the same visual row. Moving the cursor outside the block
 or switching windows restores normal scrollbind.
 
 TOGGLING LAYOUT                                   *codediff-toggle-layout*
 
-Press `t` in a diff view to toggle between side-by-side and inline layout.
-The current file is re-rendered in the new layout automatically. This works
-in all modes (explorer, history, standalone).
+Press t in a native diff tab to toggle side-by-side and inline layout.
+The current file is re-rendered automatically in native explorer, history,
+and standalone views. This toggle is not installed in the fixed status popup.
 
 The toggle keymap can be customized:
 >lua
@@ -293,7 +534,7 @@ The toggle keymap can be customized:
   })
 <
 
-Setup entry point:
+Setup reference (selected defaults; omitted options retain their defaults):
 >lua
   require("codediff").setup({
     highlights = {
@@ -377,6 +618,9 @@ Setup entry point:
         close_on_open_in_prev_tab = false,
         toggle_stage = "-",
         toggle_staged_view = "gS",
+        stage_hunk = "<leader>hs",
+        unstage_hunk = "<leader>hu",
+        revert_hunk = "<leader>hr", -- Working file only; index unchanged
         hunk_textobject = "ih",
         show_help = "g?",
         align_move = "gm",
@@ -551,8 +795,10 @@ Neovim limits sign text to two display cells. The fullwidth defaults each
 occupy two display cells. A rejected sign is skipped with a warning and the
 rest of the diff still renders.
 
-CodeDiff does not modify signcolumn or statuscolumn. This example keeps a sign
-column and places signs after line numbers:
+The optional +/- gutter-sign feature does not modify signcolumn/statuscolumn.
+The popup separately supplies numbered panes and active-hunk > markers
+(|codediff-hunks|). For native tabs, this example keeps a sign column and places
+signs after line numbers:
 
 >lua
   vim.opt.signcolumn = "yes"
@@ -585,6 +831,8 @@ CodeDiff defines highlight groups matching VSCode's diff colors:
 - CodeDiffGutterDelete - Gutter delete sign (defaults to CodeDiffLineDelete)
 - CodeDiffGutterInsertNumber - Gutter insert line number (defaults to CodeDiffCharInsert)
 - CodeDiffGutterDeleteNumber - Gutter delete line number (defaults to CodeDiffCharDelete)
+- CodeDiffActiveHunk - selected popup hunk line numbers (bold and underlined)
+- CodeDiffActiveHunkSign - selected popup hunk > markers (links to DiagnosticWarn)
 
 Default behavior:
 - Uses DiffAdd and DiffDelete for line-level highlights
@@ -633,17 +881,25 @@ Override in your config or colorscheme:
 ==============================================================================
 LUA API                                                   *codediff-lua-api*
 
-Primary entry point:
+Public entry points:
 >lua
-  require("codediff").setup({ ... })
+  local codediff = require("codediff")
+  codediff.setup({ ... })
+  codediff.next_hunk()
+  codediff.prev_hunk()
+  codediff.next_file()
+  codediff.prev_file()
 <
+Navigation functions return whether navigation succeeded. File navigation
+applies to explorer/history; in single-file history it moves between commits.
 
-Advanced usage (internal modules):
+Advanced modules (internal, not a stable public API):
 >lua
-  local diff = require("codediff.diff")
+  local diff = require("codediff.core.diff")
   local render = require("codediff.ui")
-  local git = require("codediff.git")
+  local git = require("codediff.core.git")
 <
+Optional OMP integration uses OMP's public send(text) API; see |codediff-omp|.
 
 ==============================================================================
 USER AUTOCMD EVENTS                                     *codediff-events*
@@ -685,6 +941,28 @@ Example: Hide tabline while CodeDiff is open:
     end,
   })
 <
+
+==============================================================================
+MIGRATION                                                *codediff-migration*
+
+- Older "reject"/"discard hunk" wording is now Revert: restore the working-file
+  hunk to the comparison's original baseline, leaving the index unchanged.
+  It does not unstage a staged hunk. See |codediff-revert|.
+- Rename keymaps.view.discard_hunk to keymaps.view.revert_hunk; there is no
+  compatibility alias. The native default is <leader>hr. A personal mapping
+  such as revert_hunk = "r" affects native tabs; popup r is fixed.
+- Merge keymaps.conflict.discard/discard_all and conflict highlight names are
+  separate settings; do not rename them as part of the hunk-key migration.
+- Native gS/g?/t and explorer mappings do not govern the status popup.
+  Use |codediff-popup-keys| rather than an old full-tab shortcut guide.
+- Remove any expectation that global s/Ctrl-s always saves. s stages/unstages
+  in the popup; workspace Ctrl-s opens help; message Ctrl-s submits the dialog
+  action. Normal editing behavior returns outside the session.
+- Blanket "without agent integrations" descriptions are obsolete: ordinary
+  review remains independent of OMP, but o optionally hands a hunk to a draft.
+  No model request is automatically submitted.
+- Neovim 0.7 is not a valid runtime requirement for this fork's current popup,
+  repository actions, and Revert implementation; see |codediff-requirements|.
 
 ==============================================================================
 SEE ALSO                                                *codediff-see-also*
