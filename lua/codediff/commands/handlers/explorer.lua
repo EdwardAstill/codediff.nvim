@@ -24,12 +24,6 @@ function M.run(revision, revision2, global_opts, pathspec)
           return
         end
 
-        -- Check if there are any changes (including conflicts)
-        local has_conflicts = status_result.conflicts and #status_result.conflicts > 0
-        if #status_result.unstaged == 0 and #status_result.staged == 0 and not has_conflicts then
-          vim.notify("No changes to show", vim.log.levels.INFO)
-          return
-        end
 
         -- Create explorer view with empty diff panes initially
 
@@ -52,6 +46,13 @@ function M.run(revision, revision2, global_opts, pathspec)
           layout = global_opts.layout,
           exit_on_close = global_opts.exit_on_close,
         }
+
+        local has_conflicts = status_result.conflicts and #status_result.conflicts > 0
+        if #status_result.unstaged == 0 and #status_result.staged == 0 and not has_conflicts
+          and not require("codediff.ui.popup").is_status(session_config) then
+          vim.notify("No changes to show", vim.log.levels.INFO)
+          return
+        end
 
         -- view.create handles everything: tab, windows, explorer, and lifecycle
         -- Empty lines and paths - explorer will populate via first file selection

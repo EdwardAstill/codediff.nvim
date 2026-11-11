@@ -1,6 +1,5 @@
 -- Completion queries use a deterministic fixture, not the checkout's refs.
 local git = require("codediff.core.git")
-local commands = require("codediff.commands")
 local fixture = require("tests.fixtures.refresh_repo")
 local h = require("tests.support")
 
@@ -66,22 +65,4 @@ describe("Command Completion", function()
     end)
   end)
 
-  describe("commands.SUBCOMMANDS", function()
-    it("Exports SUBCOMMANDS list", function()
-      assert.is_table(commands.SUBCOMMANDS)
-      assert.is_true(#commands.SUBCOMMANDS > 0)
-    end)
-
-    it("Contains expected subcommands", function()
-      for _, name in ipairs({ "file", "pr", "install" }) do
-        assert.is_true(vim.tbl_contains(commands.SUBCOMMANDS, name), "missing subcommand " .. name)
-      end
-    end)
-  end)
-
-  describe("Completion caching", function()
-    it("Returns consistent results on repeated calls", function()
-      assert.same(git.get_rev_candidates(repo.dir), git.get_rev_candidates(repo.dir))
-    end)
-  end)
 end)

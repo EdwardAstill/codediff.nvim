@@ -51,11 +51,15 @@ function M.capture_session_profiles(sess)
   end
 
   sess.window_profiles = sess.window_profiles or {}
-  if is_valid_window(sess.original_win) and not sess.window_profiles.original then
-    sess.window_profiles.original = read_window_opts(sess.original_win)
-  end
-  if is_valid_window(sess.modified_win) and not sess.window_profiles.modified then
-    sess.window_profiles.modified = read_window_opts(sess.modified_win)
+  for _, side in ipairs({ "original", "modified" }) do
+    local win = sess[side .. "_win"]
+    if is_valid_window(win) and not sess.window_profiles[side] then
+      local opts = read_window_opts(win)
+      if sess.popup then
+        opts.number, opts.relativenumber = true, false
+      end
+      sess.window_profiles[side] = opts
+    end
   end
 end
 

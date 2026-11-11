@@ -24,6 +24,9 @@ local function cleanup_diff(tabpage)
     return
   end
   diff.closing = true
+  if diff.popup then
+    require("codediff.ui.popup").restore_chrome(diff)
+  end
 
   -- Emit CodeDiffClose User autocmd
   vim.api.nvim_exec_autocmds("User", {

@@ -19,18 +19,14 @@ local function setup_command()
   })
 end
 
--- Open a fresh CodeDiff explorer for `focus_file` and return (tabpage, explorer).
--- Earlier tests leave sessions and pending vim.schedule callbacks in the
--- lifecycle singleton, so flush + cleanup first, then pick up the explorer
--- created by THIS :CodeDiff (the one whose buffer carries the auto-open
--- buffer-local j keymap).
-local function open_explorer(temp_dir, focus_file)
+-- Open a fresh explorer; explicit revisions keep native configurable controls.
+local function open_explorer(temp_dir, focus_file, revision)
   local lifecycle = require("codediff.ui.lifecycle")
   vim.wait(200)
   lifecycle.cleanup_all()
 
   vim.cmd("edit " .. temp_dir .. "/" .. focus_file)
-  vim.cmd("CodeDiff")
+  vim.cmd("CodeDiff" .. (revision and " " .. revision or ""))
 
   local tabpage, explorer
   local ready = vim.wait(6000, function()
@@ -39,16 +35,9 @@ local function open_explorer(temp_dir, focus_file)
       if e and e.winid and vim.api.nvim_win_is_valid(e.winid)
           and e.bufnr and vim.api.nvim_buf_is_valid(e.bufnr)
           and e.data.current_file_path ~= nil then
-        -- Pick the explorer wired with the auto-open j/k keymap; leftover
-        -- explorers from prior tests (default config) lack it.
-        local maps = vim.api.nvim_buf_get_keymap(e.bufnr, "n")
-        for _, m in ipairs(maps) do
-          if m.lhs == "j" and (m.desc or ""):find("codediff: move and auto%-open") then
-            tabpage = tp
-            explorer = e
-            return true
-          end
-        end
+        tabpage = tp
+        explorer = e
+        return true
       end
     end
     return false
@@ -291,14 +280,16 @@ describe("Explorer Mode", function()
       explorer = require("codediff.ui.lifecycle").get_panel_view(vim.api.nvim_get_current_tabpage())
       return explorer and explorer.panes and #explorer.panes == 2
     end))
-    local unstaged = table.concat(vim.api.nvim_buf_get_lines(explorer.panes[1].bufnr, 0, -1, false), "\n")
-    local staged = table.concat(vim.api.nvim_buf_get_lines(explorer.panes[2].bufnr, 0, -1, false), "\n")
-    for _, name in ipairs({ "file1.txt", "file3.txt" }) do
-      assert.is_not_nil(unstaged:find(name, 1, true))
-      assert.is_nil(staged:find(name, 1, true))
+    local function files(pane)
+      local names = {}
+      for _, node in ipairs(require("codediff.ui.explorer.tree").get_all_files(pane.tree)) do
+        names[#names + 1] = node.data.path
+      end
+      table.sort(names)
+      return names
     end
-    assert.is_not_nil(staged:find("file2.txt", 1, true))
-    assert.is_nil(unstaged:find("file2.txt", 1, true))
+    assert.same({ "file1.txt", "file3.txt" }, files(explorer.panes[1]))
+    assert.same({ "file2.txt" }, files(explorer.panes[2]))
   end)
 
   -- Test 6: First file is auto-selected and displayed
@@ -340,29 +331,6 @@ describe("Explorer Mode", function()
   end)
 
 
-  -- Test 8: No changes shows appropriate message
-  it("Shows message when no changes exist", function()
-    -- Commit all changes to have clean working tree
-    h.git_cmd(temp_dir, "add -A")
-    h.git_cmd(temp_dir, 'commit -m "Clean"')
-    
-    local notified = false
-    local original_notify = vim.notify
-    vim.notify = function(msg, level)
-      if msg:match("No changes") then
-        notified = true
-      end
-      original_notify(msg, level)
-    end
-    
-    vim.cmd("edit " .. temp_dir .. "/file1.txt")
-    vim.cmd("CodeDiff")
-    
-    vim.wait(2000, function() return notified end)
-    
-    vim.notify = original_notify
-    assert.is_true(notified, "Should notify when no changes")
-  end)
 
   -- Test 9: Non-git directory shows error
   it("Shows error for non-git directory", function()
@@ -408,7 +376,7 @@ describe("Explorer Mode", function()
     })
 
     local previous_tab = vim.api.nvim_get_current_tabpage()
-    local ready, tabpage, explorer = open_explorer(temp_dir, "file1.txt")
+    local ready, tabpage, explorer = open_explorer(temp_dir, "file1.txt", "HEAD")
     assert.is_true(ready, "Explorer should be ready with an initial selection")
     vim.api.nvim_set_current_tabpage(tabpage)
 
@@ -438,7 +406,7 @@ describe("Explorer Mode", function()
       explorer = { auto_open_on_cursor = true },
     })
 
-    local ready, tabpage, explorer = open_explorer(temp_dir, "file1.txt")
+    local ready, tabpage, explorer = open_explorer(temp_dir, "file1.txt", "HEAD")
     assert.is_true(ready, "Explorer should be ready with an initial selection")
     vim.api.nvim_set_current_tabpage(tabpage)
 
@@ -479,7 +447,7 @@ describe("Explorer Mode", function()
     vim.fn.mkdir(temp_dir .. "/nested", "p")
     vim.fn.writefile({"deep"}, temp_dir .. "/nested/deep.txt")
 
-    local ready, tabpage, explorer = open_explorer(temp_dir, "file1.txt")
+    local ready, tabpage, explorer = open_explorer(temp_dir, "file1.txt", "HEAD")
     assert.is_true(ready, "Explorer should be ready")
     vim.api.nvim_set_current_tabpage(tabpage)
 

@@ -163,14 +163,15 @@ end
 
 -- Compute the required column width for one group of sections
 local function group_width(sections)
-  local max_desc = 0
+  local max_desc, key_width = 0, KEY_COL
   for _, sec in ipairs(sections) do
     for _, item in ipairs(sec.items) do
-      max_desc = math.max(max_desc, #item[2])
+      max_desc = math.max(max_desc, vim.fn.strdisplaywidth(item[2]))
+      key_width = math.max(key_width, vim.fn.strdisplaywidth(item[1]))
     end
   end
-  -- key_col + " → " (4 display cells) + desc + padding
-  return math.max(KEY_COL + 4 + max_desc + 3, 40)
+  -- Keys + separator + descriptions + padding.
+  return math.max(key_width + 3 + max_desc + 3, 40), key_width
 end
 
 -- Compute the required window width from sections (single-column layout)
@@ -181,7 +182,7 @@ end
 -- Render one group of sections into vertical lines (no column composition).
 -- Returns lines (string[]) and hls ({ line, col_start, col_end, hl_group }[]),
 -- with all offsets in bytes so nvim_buf_add_highlight can consume them directly.
-local function render_group(sections, col_width)
+local function render_group(sections, col_width, key_width)
   local lines = {}
   local hls = {}
 
@@ -197,20 +198,21 @@ local function render_group(sections, col_width)
     table.insert(hls, { #lines - 1, pad, pad + #sec.title, "CodeDiffHelpSection" })
 
     -- Column header
-    local col_hdr = string.format("%" .. KEY_COL .. "s    %s", "KEYS", "ACTION")
+    local col_hdr = string.format("%" .. key_width .. "s    %s", "KEYS", "ACTION")
     table.insert(lines, col_hdr)
     table.insert(hls, { #lines - 1, 0, #col_hdr, "CodeDiffHelpSep" })
 
     -- Entries
     for _, item in ipairs(sec.items) do
       local key, desc = item[1], item[2]
-      local key_str = string.format("%" .. KEY_COL .. "s", key)
+      local key_str = string.rep(" ", key_width - vim.fn.strdisplaywidth(key)) .. key
       local line = key_str .. " → " .. desc
       table.insert(lines, line)
       local row = #lines - 1
-      table.insert(hls, { row, 0, KEY_COL, "CodeDiffHelpKey" })
-      table.insert(hls, { row, KEY_COL, KEY_COL + 3, "CodeDiffHelpSep" })
-      table.insert(hls, { row, KEY_COL + 3, #line, "CodeDiffHelpDesc" })
+      local desc_start = #key_str + #" → "
+      table.insert(hls, { row, 0, #key_str, "CodeDiffHelpKey" })
+      table.insert(hls, { row, #key_str, desc_start, "CodeDiffHelpSep" })
+      table.insert(hls, { row, desc_start, #line, "CodeDiffHelpDesc" })
     end
   end
 
@@ -233,10 +235,10 @@ end
 -- Both column widths are per-group; horizontal padding on the left column and
 -- byte-offset shifting on the right column keep highlights aligned.
 local function compose_two_col(left_sections, right_sections)
-  local left_w = group_width(left_sections)
-  local right_w = group_width(right_sections)
-  local left_lines, left_hls = render_group(left_sections, left_w)
-  local right_lines, right_hls = render_group(right_sections, right_w)
+  local left_w, left_key_width = group_width(left_sections)
+  local right_w, right_key_width = group_width(right_sections)
+  local left_lines, left_hls = render_group(left_sections, left_w, left_key_width)
+  local right_lines, right_hls = render_group(right_sections, right_w, right_key_width)
 
   local n = math.max(#left_lines, #right_lines)
   local sep_bytes = #COL_SEP
@@ -271,9 +273,66 @@ local function compose_two_col(left_sections, right_sections)
   return lines, hls, total_width
 end
 
+local review_help
+
+local function toggle_review_help(tabpage, session)
+  local handle = session and session.popup.dialog or (not session and review_help)
+  if handle and vim.api.nvim_win_is_valid(handle.winid) and vim.bo[handle.bufnr].filetype == "codediff-help" then
+    handle.close()
+    review_help = nil
+    return
+  end
+  local sections = {
+    { title = "REVIEW WORKSPACE", items = {
+      { "q / <C-q>", "Close review" },
+      { "<Tab> / <S-Tab>", "Next / previous pane" },
+      { "i / k", "Move up / down" },
+      { "[ / ]", "Previous / next hunk" },
+      { "c", "Commit staged changes (edit message)" },
+      { "z", "Stash tracked changes (confirmation)" },
+      { "b / w", "List local branches / worktrees" },
+      { "h / <C-s> / <C-S-s>", "Help (:CodeDiff help also works)" },
+    } },
+    { title = "CHANGE TREES", items = {
+      { "<Up> / <Down>", "Move up / down (same as i / k)" },
+      { "<CR> / <2-LeftMouse>", "Select file / toggle folder" },
+      { "j / l", "Collapse / expand folder or select file" },
+      { "s", "Stage / unstage selected file or folder" },
+      { "S / U", "Stage / unstage all files" },
+    } },
+    { title = "DIFF PANES", items = {
+      { "j / l", "Move left / right" },
+      { "s", "Stage / unstage hunk under cursor" },
+      { "r", "Reject unstaged hunk (y confirms)" },
+    } },
+  }
+  local width, key_width = compute_width(sections)
+  local lines, hls = render_group(sections, math.min(width, 88), key_width)
+  vim.list_extend(lines, {
+    "",
+    " Reject/stash refuse unsaved files. Press q, save in the editor,",
+    " then reopen review. Save shortcuts show help, never write here.",
+  })
+  setup_highlights()
+  handle = require("codediff.ui.dialog").open({ tabpage = tabpage }, {
+    title = "Review help", lines = lines, filetype = "codediff-help",
+    footer = "h/q/Esc/Ctrl-q close",
+  })
+  review_help = handle
+  vim.keymap.set("n", "h", handle.close, { buffer = handle.bufnr, nowait = true })
+  for _, hl in ipairs(hls) do
+    vim.api.nvim_buf_add_highlight(handle.bufnr, ns, hl[4], hl[1], hl[2], hl[3])
+  end
+end
+
 --- Show or toggle the keymap help floating window
 function M.toggle(tabpage)
+  tabpage = tabpage or vim.api.nvim_get_current_tabpage()
   local session = lifecycle.get_session(tabpage)
+  if not session or session.popup then
+    toggle_review_help(tabpage, session)
+    return
+  end
 
   -- Close existing help window if open
   if session and session._help_win and vim.api.nvim_win_is_valid(session._help_win) then
@@ -309,8 +368,9 @@ function M.toggle(tabpage)
     end
   end
   if not lines then
-    win_width = compute_width(sections)
-    lines, hls = render_group(sections, win_width)
+    local key_width
+    win_width, key_width = compute_width(sections)
+    lines, hls = render_group(sections, win_width, key_width)
   end
 
   -- Create buffer
@@ -335,6 +395,7 @@ function M.toggle(tabpage)
     height = height,
     style = "minimal",
     border = "rounded",
+    zindex = 90,
     title = " Keymaps ",
     title_pos = "center",
   })
@@ -348,7 +409,7 @@ function M.toggle(tabpage)
 
   -- The popup takes focus, so it carries its own close keys: q, Esc, and
   -- whatever opened it, so that key toggles it shut again.
-  local close_keys = vim.list_extend({ "q", "<Esc>" }, normalize.key_list(keymaps.view.show_help))
+  local close_keys = vim.list_extend({ "h", "q", "<Esc>", "<C-q>" }, normalize.key_list(keymaps.view.show_help))
   for _, key in ipairs(close_keys) do
     vim.keymap.set("n", key, function()
       if vim.api.nvim_win_is_valid(win) then

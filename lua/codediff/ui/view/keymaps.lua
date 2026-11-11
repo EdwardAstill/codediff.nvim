@@ -57,6 +57,72 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
     is_conflict = is_conflict,
   }
 
+  if session and session.popup then
+    local function map(key, action, desc)
+      lifecycle.set_tab_keymap(tabpage, "n", key, action, { desc = desc })
+    end
+    map({ "q", "<C-q>" }, function()
+      lifecycle.close(tabpage)
+    end, "Close review")
+    map("<Tab>", function()
+      panes.cycle(ctx, 1)
+    end, "Next pane")
+    map("<S-Tab>", function()
+      panes.cycle(ctx, -1)
+    end, "Previous pane")
+    map("i", "k", "Move up")
+    map("k", "j", "Move down")
+    map("j", "h", "Move left")
+    map("l", "l", "Move right")
+    map("[", function()
+      navigation.prev_hunk()
+      hunk.refresh_selection(tabpage)
+    end, "Previous hunk")
+    map("]", function()
+      navigation.next_hunk()
+      hunk.refresh_selection(tabpage)
+    end, "Next hunk")
+    map("s", function()
+      local current = lifecycle.get_session(tabpage)
+      if not current then
+        return
+      end
+      local buf = vim.api.nvim_get_current_buf()
+      if buf == current.original_bufnr or buf == current.modified_bufnr then
+        if current.modified_revision == ":0" then
+          hunk.unstage_hunk(ctx)
+        else
+          hunk.stage_hunk(ctx)
+        end
+      else
+        stage.toggle_stage(ctx)
+      end
+    end, "Stage/unstage selected hunk or entry")
+    for key, action in pairs({ c = "commit", z = "stash", b = "branches", w = "worktrees" }) do
+      map(key, function()
+        require("codediff.ui.view.actions.repository")[action](ctx)
+      end, action)
+    end
+    map({ "h", "<C-s>", "<C-S-s>" }, function()
+      require("codediff.ui.keymap_help").toggle(tabpage)
+    end, "Review help")
+    for _, buf in ipairs({ original_bufnr, modified_bufnr }) do
+      if buf and vim.api.nvim_buf_is_valid(buf) then
+        lifecycle.set_buf_keymap(tabpage, buf, "n", "r", function()
+          hunk.discard_hunk(ctx)
+        end, { desc = "Reject unstaged hunk" })
+      end
+    end
+    -- Panel-specific horizontal keys must win over the tab-wide spatial keys.
+    local explorer = lifecycle.get_panel_view(tabpage)
+    for _, pane in ipairs(explorer and (explorer.panes or { explorer }) or {}) do
+      require("codediff.ui.explorer.keymaps").setup(pane)
+    end
+    lifecycle.end_keymap_scope(tabpage, "view")
+    hunk.setup_selection(tabpage)
+    return
+  end
+
   -- Quit keymap (q)
   if keymaps.quit then
     lifecycle.set_tab_keymap(tabpage, "n", keymaps.quit, function()
@@ -64,14 +130,6 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
     end, { desc = "Close codediff tab" })
   end
 
-  if session and session.popup then
-    lifecycle.set_tab_keymap(tabpage, "n", "<Tab>", function()
-      panes.cycle(ctx, 1)
-    end, { desc = "Focus next CodeDiff pane" })
-    lifecycle.set_tab_keymap(tabpage, "n", "<S-Tab>", function()
-      panes.cycle(ctx, -1)
-    end, { desc = "Focus previous CodeDiff pane" })
-  end
 
   -- Hunk navigation (]c, [c)
   if keymaps.next_hunk then

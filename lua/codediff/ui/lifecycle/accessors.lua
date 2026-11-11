@@ -274,6 +274,7 @@ function M.update_diff_result(tabpage, diff_lines)
   end
 
   sess.stored_diff_result = diff_lines
+  require("codediff.ui.view.actions.hunk").refresh_selection(tabpage)
   if diff_lines then
     require("codediff.ui.refresh").ready(tabpage)
   end

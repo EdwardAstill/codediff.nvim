@@ -18,9 +18,27 @@ local function assert_workspace(session)
   return wins
 end
 
+local function assert_diff_numbers(session)
+  for _, side in ipairs({ "original", "modified", "result" }) do
+    local win = session[side .. "_win"]
+    if win then
+      assert.is_true(vim.wo[win].number)
+      assert.is_false(vim.wo[win].relativenumber)
+    end
+  end
+  for _, pane in ipairs(session.panel.view.panes) do
+    assert.is_false(vim.wo[pane.winid].number)
+    assert.is_false(vim.wo[pane.winid].relativenumber)
+  end
+end
+
+local function chrome_options()
+  return { laststatus = vim.o.laststatus, cmdheight = vim.o.cmdheight, showmode = vim.o.showmode, ruler = vim.o.ruler }
+end
+
 describe("Status popup workspace", function()
   local repo, saved_cwd, saved_columns, saved_lines, saved_hidden, saved_confirm
-  local user_buffers
+  local user_buffers, user_tabs, saved_chrome, saved_number, saved_relativenumber
 
   local function open()
     local tabpage = vim.api.nvim_get_current_tabpage()
@@ -47,6 +65,8 @@ describe("Status popup workspace", function()
     lifecycle.cleanup_all()
     saved_cwd, saved_columns, saved_lines = vim.fn.getcwd(), vim.o.columns, vim.o.lines
     saved_hidden, saved_confirm = vim.o.hidden, vim.fn.confirm
+    saved_chrome = chrome_options()
+    saved_number, saved_relativenumber = vim.wo.number, vim.wo.relativenumber
     vim.o.columns, vim.o.lines = 120, 36
     require("codediff").setup({ diff = { layout = "side-by-side" }, explorer = { auto_open_on_cursor = false } })
     repo = h.create_temp_git_repo()
@@ -64,12 +84,17 @@ describe("Status popup workspace", function()
     vim.fn.delete(repo.path("deleted.txt"))
     vim.fn.chdir(repo.dir)
     vim.cmd("edit " .. vim.fn.fnameescape(repo.path("tracked.txt")))
-    user_buffers = {}
+    user_buffers, user_tabs = {}, {}
   end)
 
   after_each(function()
     vim.fn.confirm = saved_confirm
     lifecycle.cleanup_all()
+    for _, tab in ipairs(user_tabs) do
+      if vim.api.nvim_tabpage_is_valid(tab) then
+        vim.cmd(vim.api.nvim_tabpage_get_number(tab) .. "tabclose!")
+      end
+    end
     vim.o.hidden = true
     vim.cmd("only!")
     vim.cmd("enew!")
@@ -81,6 +106,10 @@ describe("Status popup workspace", function()
     vim.fn.chdir(saved_cwd)
     repo.cleanup()
     vim.o.columns, vim.o.lines, vim.o.hidden = saved_columns, saved_lines, saved_hidden
+    for name, value in pairs(saved_chrome) do
+      vim.o[name] = value
+    end
+    vim.wo.number, vim.wo.relativenumber = saved_number, saved_relativenumber
   end)
 
   it("preserves the current tab, underlying splits, unsaved buffers, focus and mappings", function()
@@ -116,6 +145,67 @@ describe("Status popup workspace", function()
     vim.bo[working].modified = false
   end)
 
+  it("restores chrome on tab switches and closing a different popup leaves the current one hidden", function()
+    vim.o.laststatus, vim.o.cmdheight, vim.o.showmode, vim.o.ruler = 3, 2, true, true
+    local expected = chrome_options()
+    local hidden = { laststatus = 0, cmdheight = 0, showmode = false, ruler = false }
+    local first = open()
+    assert.same(hidden, chrome_options())
+    vim.cmd("tabnew")
+    local second_tab = vim.api.nvim_get_current_tabpage()
+    user_tabs[#user_tabs + 1] = second_tab
+    assert.same(expected, chrome_options())
+    local second = open()
+    assert.same(hidden, chrome_options())
+    vim.api.nvim_set_current_tabpage(first.tabpage)
+    assert.same(hidden, chrome_options())
+    assert.is_true(lifecycle.close(second.tabpage))
+    assert.same(hidden, chrome_options())
+    assert.is_true(lifecycle.close(first.tabpage))
+    assert.same(expected, chrome_options())
+  end)
+
+  it("keeps absolute diff numbers without changing the underlying window preferences", function()
+    local underlying = vim.api.nvim_get_current_win()
+    vim.wo[underlying].number, vim.wo[underlying].relativenumber = false, true
+    local session = open()
+    assert_diff_numbers(session)
+    for _, pane in ipairs(session.panel.view.panes) do
+      assert.is_true(vim.api.nvim_win_get_width(pane.winid) + 2 <= 26)
+      assert.is_true(vim.api.nvim_win_get_width(pane.winid) < 120 * 0.17)
+      local footer = vim.api.nvim_win_get_config(pane.winid).footer
+      assert.is_truthy(footer[1][1]:find(pane.group == "staged" and "s unstage" or "s stage", 1, true))
+    end
+    assert.is_false(vim.wo[underlying].number)
+    assert.is_true(vim.wo[underlying].relativenumber)
+    lifecycle.close(session.tabpage)
+    assert.is_false(vim.wo[underlying].number)
+    assert.is_true(vim.wo[underlying].relativenumber)
+  end)
+
+  it("closes an owned child dialog with the review", function()
+    local session = open()
+    local dialog = require("codediff.ui.dialog").open({ tabpage = session.tabpage }, { title = "Review", lines = { "Close with parent" } })
+    assert.equal(dialog, session.popup.dialog)
+    assert.is_true(lifecycle.close(session.tabpage))
+    assert.is_nil(session.popup.dialog)
+    assert.is_false(vim.api.nvim_win_is_valid(dialog.winid))
+    assert.is_false(vim.api.nvim_buf_is_valid(dialog.bufnr))
+  end)
+
+  it("restores chrome even if a close hook fails", function()
+    local expected = chrome_options()
+    local session = open()
+    vim.api.nvim_create_autocmd("User", {
+      pattern = "CodeDiffClose",
+      once = true,
+      callback = function() error("test close hook failure") end,
+    })
+    pcall(lifecycle.close, session.tabpage)
+    assert.is_nil(lifecycle.get_session(session.tabpage))
+    assert.same(expected, chrome_options())
+  end)
+
   it("closes coherently when any of its four panes closes, and can reopen", function()
     local underlying = vim.api.nvim_tabpage_list_wins(0)
     for pane = 1, 4 do
@@ -139,6 +229,7 @@ describe("Status popup workspace", function()
       vim.o.columns, vim.o.lines = size[1], size[2]
       vim.api.nvim_exec_autocmds("VimResized", {})
       local wins = assert_workspace(session)
+      assert_diff_numbers(session)
       for _, win in ipairs(wins) do
         local cfg = vim.api.nvim_win_get_config(win)
         assert.is_true(cfg.width >= 1 and cfg.height >= 1)
@@ -186,6 +277,7 @@ describe("Status popup workspace", function()
     }) do
       select_file(session, unpack(file))
       assert.same(wins, assert_workspace(session))
+      assert_diff_numbers(session)
       if file[1] == "new.txt" then
         edited = session.modified_bufnr
         vim.api.nvim_buf_set_lines(edited, 0, -1, false, { "unsaved untracked content" })
@@ -224,6 +316,9 @@ describe("Status popup workspace", function()
     end, 20))
     assert_workspace(session)
     assert.equal("editor", vim.api.nvim_win_get_config(session.result_win).relative)
+    assert_diff_numbers(session)
+    vim.api.nvim_exec_autocmds("VimResized", {})
+    assert_diff_numbers(session)
     assert.same(before_layout, vim.fn.winlayout())
     vim.fn.confirm = function() return 2 end
     assert.is_false(lifecycle.close(session.tabpage))

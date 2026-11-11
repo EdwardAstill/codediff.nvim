@@ -36,6 +36,10 @@ local function get_keymap_fn(bufnr, desc_pattern)
     if km.desc and km.desc:find(desc_pattern) then
       return km.callback
     end
+    if km.lhs == "s" and km.desc == "Stage/unstage selected hunk or entry"
+      and (desc_pattern == "Stage hunk" or desc_pattern == "Unstage hunk") then
+      return km.callback
+    end
   end
   return nil
 end
@@ -692,7 +696,7 @@ describe("Hunk operations (inline)", function()
   it("discard_hunk refreshes inline mode when autoread is disabled", function()
     vim.o.autoread = false
     repo = create_two_hunk_repo()
-    local tabpage = open_codediff_and_wait(repo)
+    local tabpage = open_codediff_and_wait(repo, nil, "HEAD")
     local lifecycle = require("codediff.ui.lifecycle")
     assert.is_true(wait_for_hunks(tabpage, 2, 8000), "Should start with 2 hunks in inline mode")
 

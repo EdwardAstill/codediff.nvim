@@ -24,6 +24,66 @@ function M.setup(explorer)
     lifecycle.set_buf_keymap(explorer.tabpage, explorer.bufnr, "n", lhs, rhs, vim.tbl_extend("force", map_options, { desc = desc }), { suspendable = false })
   end
 
+  if (explorer.root or explorer).panes then
+    local function select()
+      local node = tree:get_node()
+      if not node or not node.data then
+        return
+      end
+      if node.data.type == "group" or node.data.type == "directory" then
+        if node:is_expanded() then
+          node:collapse()
+        else
+          node:expand()
+        end
+        tree:render()
+      else
+        explorer.on_file_select(node.data)
+      end
+    end
+    panel_map("<CR>", select, "Select/toggle entry")
+    panel_map("<2-LeftMouse>", select, "Select/toggle entry")
+    local function move(direction)
+      vim.cmd("normal! " .. direction)
+      if config.options.explorer.auto_open_on_cursor then
+        local node = tree:get_node()
+        if node and node.data and not node.data.type then
+          local selected = explorer.data.current_selection or {}
+          if selected.path ~= node.data.path or selected.group ~= node.data.group then
+            explorer.on_file_select(node.data)
+          end
+        end
+      end
+    end
+    panel_map({ "i", "<Up>" }, function() move("k") end, "Move up")
+    panel_map({ "k", "<Down>" }, function() move("j") end, "Move down")
+    panel_map("j", function()
+      local node = tree:get_node()
+      if node and node:collapse() then
+        tree:render()
+      end
+    end, "Collapse folder")
+    panel_map("l", function()
+      local node = tree:get_node()
+      if node and node.data and (node.data.type == "directory" or node.data.type == "group") then
+        node:expand()
+        tree:render()
+      else
+        select()
+      end
+    end, "Expand folder / select file")
+    panel_map("s", function()
+      actions_module.toggle_stage_entry(explorer, tree)
+    end, "Stage/unstage selected entry")
+    panel_map("S", function()
+      actions_module.stage_all(explorer)
+    end, "Stage all files")
+    panel_map("U", function()
+      actions_module.unstage_all(explorer)
+    end, "Unstage all files")
+    return
+  end
+
   -- Toggle expand/collapse or select file
   if explorer_keymaps.select then
     panel_map(explorer_keymaps.select, function()

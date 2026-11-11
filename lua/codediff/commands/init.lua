@@ -3,7 +3,7 @@
 local M = {}
 
 -- Subcommands available for :CodeDiff
-M.SUBCOMMANDS = { "merge", "file", "dir", "history", "pr", "install" }
+M.SUBCOMMANDS = { "merge", "file", "dir", "history", "pr", "install", "help" }
 
 local git = require("codediff.core.git")
 local ap = require("codediff.core.argparse")
@@ -254,6 +254,10 @@ local function build_app()
       return
     end
     M.vscode_merge({ fargs = { file } }, parse.to_global_opts(m))
+  end))
+
+  app:subcommand(ap.Command.new("help"):about("Show review-mode shortcuts"):handler(function()
+    require("codediff.ui.keymap_help").toggle(vim.api.nvim_get_current_tabpage())
   end))
 
   app:subcommand(ap.Command.new("install"):handler(function(m)

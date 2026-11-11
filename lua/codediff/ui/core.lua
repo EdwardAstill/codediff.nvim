@@ -362,7 +362,7 @@ function M.render_whole_file(bufnr, side)
   vim.api.nvim_buf_clear_namespace(bufnr, ns_filler, 0, -1)
   gutter_signs.set_whole_file(bufnr, side)
 
-  local count = vim.api.nvim_buf_line_count(bufnr)
+  local count = vim.b[bufnr].codediff_loading and 0 or vim.api.nvim_buf_line_count(bufnr)
   if vim.api.nvim_buf_get_offset(bufnr, count) == 0 then
     count = 0
   end

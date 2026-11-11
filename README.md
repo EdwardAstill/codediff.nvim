@@ -17,6 +17,7 @@ https://github.com/user-attachments/assets/3c66a26d-5ff9-4dac-8035-a2f2b7bd2308
 - **Live review:** Diffs stay synchronized with repository changes while you edit.
 - **VSCode style diffs:** Review side-by-side or inline changes with line- and character-level highlighting.
 - **Git staging:** Inspect, stage, and unstage hunks, files, or entire folders from one review workspace.
+- **Repository actions:** Commit the index, stash tracked changes, and inspect local branches or worktrees in separate popups.
 - **Complete workflows:** Review local changes, staged changes, revisions, pull requests, and history.
 - **Focused navigation:** Move between files and hunks, fold unchanged code, and track moved blocks.
 - **Conflict resolution:** Resolve merge conflicts per block or across the whole file.
@@ -231,7 +232,7 @@ Both methods automatically place the library in the plugin root directory.
       date_format = "%ar",  -- Commit date rendering: "%ar" (default, relative), "%ai" (ISO), "%ad" (git default), or any strftime string (e.g. "%Y/%m/%d %H:%M:%S")
     },
 
-    -- Keymaps in diff view
+    -- Keymaps for revision/history/inline views; the status popup uses review controls below.
     keymaps = {
       view = {
         quit = "q",                    -- Close diff workspace
@@ -416,11 +417,27 @@ Use `:CodeDiff` to review repository changes, pull requests, files, directories,
 
 #### Working Tree and Revisions
 
-`:CodeDiff` opens a floating workspace over the current editor: **Unstaged** above **Staged** on the left, **Before** in the middle, and **After** on the right. Each left pane has an independent file tree; folders include all their descendants.
+`:CodeDiff` opens a floating review workspace, even in a clean repository: narrow **Unstaged** and **Staged** trees on the left, with numbered **Before** and **After** diffs in the middle and right. Normal editor chrome is hidden until you leave review.
 
-Use `Tab` / `Shift-Tab` to cycle the four panes, `Enter` to preview a file or expand a folder, and `-` to stage or unstage the selected file/folder. In a diff pane, `<leader>hs` stages the current hunk and `<leader>hu` unstages it. `S` / `U` in either tree stage / unstage everything.
+| Key | Review action |
+| --- | --- |
+| `h` / `:CodeDiff help` | Show shortcuts |
+| `Tab` / `Shift-Tab` | Cycle panes |
+| `i` / `k`, arrows | Move up / down |
+| `j` / `l` in trees | Collapse / expand folder or select file |
+| `Enter` in trees | Preview file / toggle folder |
+| `s` | Stage/unstage selected file or folder in trees; current hunk in diffs |
+| `S` / `U` in trees | Stage / unstage everything |
+| `[` / `]` | Previous / next hunk |
+| `r` in diffs | Confirm rejection of the selected unstaged hunk |
+| `c` | Commit popup: current HEAD and editable message; `Ctrl-s` submits |
+| `z` | Confirm stash of tracked changes; untracked files stay in place |
+| `b` / `w` | Separate read-only local branch / worktree lists |
+| `q` / `Ctrl-q` | Close review and restore the editor |
 
-`q` closes the popup and restores the underlying editor; `gf` closes it and opens the selected file there. Closing preserves unsaved buffers. Restore/discard and diff-copy shortcuts are disabled in this popup. Conflict files add a Result pane below the diff pair.
+The active hunk has `>` gutter markers, emphasized line numbers, and a `Hunk N/M` footer. Its selection stays visible while confirming rejection. `r` changes only that unstaged hunk; staged changes are untouched. Rejection and stash refuse unsaved affected buffers: return to the editor and save them first. Rejection cannot be undone by Git.
+
+Commits never auto-stage. Their popup shows only the current HEAD and your message, retains drafts after Git errors, and refuses submission if HEAD changed. `Ctrl-q` cancels a dialog. Branch/worktree lists never switch your checkout. Review keymaps are local to the workspace; normal save keys return when it closes. Conflict files add a Result pane.
 
 Explicit revision comparisons, history, and `--inline` retain their existing tab layouts:
 

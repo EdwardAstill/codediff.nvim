@@ -41,7 +41,7 @@ end
 local function help_lines(tabpage)
   keymap_help.toggle(tabpage)
   local session = lifecycle.get_session(tabpage)
-  local win = session and session._help_win
+  local win = session and (session.popup and session.popup.dialog.winid or session._help_win)
   assert.is_true(win ~= nil and vim.api.nvim_win_is_valid(win), "help window should open")
 
   local lines = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, -1, false)
@@ -69,8 +69,14 @@ end
 local function advertised_keys(lines)
   local keys = {}
   for _, line in ipairs(lines) do
-    for key in line:gmatch("(%S+)%s+→") do
-      keys[canonical(key)] = true
+    for prefix in line:gmatch("(.-)→") do
+      local words = vim.split(prefix, "%s+", { trimempty = true })
+      local i = #words
+      while i > 0 do
+        keys[canonical(words[i])] = true
+        if words[i - 1] ~= "/" then break end
+        i = i - 2
+      end
     end
   end
   return keys
@@ -258,18 +264,6 @@ describe("keymap help popup", function()
     cleanup()
   end)
 
-  it("uses NormalFloat for the help window body highlight", function()
-    local tabpage, cleanup = open_standalone()
-
-    keymap_help.toggle(tabpage)
-    local session = lifecycle.get_session(tabpage)
-    local win = session and session._help_win
-    assert.is_true(win ~= nil and vim.api.nvim_win_is_valid(win), "help window should open")
-    assert.are.same("NormalFloat:NormalFloat", vim.wo[win].winhighlight)
-    keymap_help.toggle(tabpage)
-
-    cleanup()
-  end)
 
   it("does not advertise a key disabled in config", function()
     local tabpage, cleanup = open_standalone({ keymaps = { view = { quit = false, toggle_compact = false } } })

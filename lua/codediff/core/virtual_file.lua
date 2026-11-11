@@ -39,6 +39,7 @@ local function load_virtual_buffer_content(buf, git_root, commit, filepath)
   local git = require("codediff.core.git")
   loads[buf] = (loads[buf] or 0) + 1
   local generation = loads[buf]
+  vim.b[buf].codediff_loading = true
 
   git.get_file_content(commit, git_root, filepath, function(err, lines)
     vim.schedule(function()
@@ -46,6 +47,7 @@ local function load_virtual_buffer_content(buf, git_root, commit, filepath)
       if not api.nvim_buf_is_valid(buf) or loads[buf] ~= generation then
         return
       end
+      vim.b[buf].codediff_loading = false
 
       if err then
         -- File doesn't exist in this revision (added/deleted file)

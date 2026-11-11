@@ -34,16 +34,9 @@ describe("Popup staging trees", function()
     return session, session.panel.view
   end
 
-  local function invoke(win, description)
+  local function invoke(win, key)
     vim.api.nvim_set_current_win(win)
-    for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(vim.api.nvim_win_get_buf(win), "n")) do
-      if mapping.desc == description then
-        assert.is_function(mapping.callback)
-        mapping.callback()
-        return
-      end
-    end
-    error("Missing action: " .. description)
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(key, true, false, true), "xt", false)
   end
 
   local function node_at(pane, pathname, kind)
@@ -65,7 +58,7 @@ describe("Popup staging trees", function()
 
   local function preview(session, pane, pathname, before, after)
     cursor(pane, pathname)
-    invoke(pane.winid, "Select/toggle entry")
+    invoke(pane.winid, "<CR>")
     eventually(function()
       local original, modified = lifecycle.get_buffers(session.tabpage or vim.api.nvim_get_current_tabpage())
       return original and modified
@@ -98,7 +91,7 @@ describe("Popup staging trees", function()
     preview(session, top, "src/mixed.txt", table.concat(indexed, "\n"), table.concat(working, "\n"))
     vim.api.nvim_set_current_win(session.modified_win)
     vim.api.nvim_win_set_cursor(session.modified_win, { 10, 0 })
-    invoke(session.modified_win, "Stage hunk under cursor")
+    invoke(session.modified_win, "s")
     indexed[10] = working[10]
     eventually(function() return repo.git({ "show", ":src/mixed.txt" }) == table.concat(indexed, "\n") .. "\n" end)
     eventually(function() return node_at(top, "src/mixed.txt") and node_at(bottom, "src/mixed.txt") end)
@@ -107,7 +100,7 @@ describe("Popup staging trees", function()
     preview(session, bottom, "src/mixed.txt", table.concat(original, "\n"), table.concat(indexed, "\n"))
     vim.api.nvim_set_current_win(session.modified_win)
     vim.api.nvim_win_set_cursor(session.modified_win, { 10, 0 })
-    invoke(session.modified_win, "Unstage hunk under cursor")
+    invoke(session.modified_win, "s")
     indexed[10] = original[10]
     eventually(function() return repo.git({ "show", ":src/mixed.txt" }) == table.concat(indexed, "\n") .. "\n" end)
     assert.same(working, vim.fn.readfile(repo.path("src/mixed.txt")))
@@ -144,7 +137,7 @@ describe("Popup staging trees", function()
     local folder = cursor(top, "[box]", "directory")
     folder:collapse()
     top.tree:render()
-    invoke(top.winid, "Toggle stage/unstage")
+    invoke(top.winid, "s")
     eventually(function()
       return repo.git({ "show", ":[box]/edit.txt" }) == "inside\n" and node_at(bottom, "[box]", "directory") ~= nil
     end)
@@ -156,7 +149,7 @@ describe("Popup staging trees", function()
 
     cursor(bottom, "[box]", "directory"):collapse()
     bottom.tree:render()
-    invoke(bottom.winid, "Toggle stage/unstage")
+    invoke(bottom.winid, "s")
     eventually(function()
       return repo.git({ "show", ":[box]/edit.txt" }) == "original [box]/edit.txt\n"
         and node_at(top, "[box]", "directory") ~= nil and not node_at(bottom, "[box]", "directory")
@@ -176,9 +169,9 @@ describe("Popup staging trees", function()
     local session, root = open("file.txt")
     local windows = { root.winid, root.panes[2].winid, session.original_win, session.modified_win }
     for index, win in ipairs(windows) do
-      invoke(win, "Focus next CodeDiff pane")
+      invoke(win, "<Tab>")
       assert.equals(windows[index % 4 + 1], vim.api.nvim_get_current_win())
-      invoke(vim.api.nvim_get_current_win(), "Focus previous CodeDiff pane")
+      invoke(vim.api.nvim_get_current_win(), "<S-Tab>")
       assert.equals(win, vim.api.nvim_get_current_win())
     end
     assert.is_true(vim.api.nvim_win_is_valid(underlying))
@@ -201,11 +194,11 @@ describe("Popup staging trees", function()
     repo.git({ "add", "outside.txt" }, 0)
     local _, root = open("new.txt")
     cursor(root, "new.txt")
-    invoke(root.winid, "Toggle stage/unstage")
+    invoke(root.winid, "s")
     eventually(function() return repo.git({ "show", ":new.txt" }) == "content\nx\n" and not node_at(root, "new.txt") end)
     local bottom = root.panes[2]
     cursor(bottom, "new.txt")
-    invoke(bottom.winid, "Toggle stage/unstage")
+    invoke(bottom.winid, "s")
     eventually(function() return repo.git({ "show", ":old.txt" }) == "content\n" end)
     assert.equals("", repo.git({ "ls-files", "--", "new.txt" }))
     assert.equals("staged outside\n", repo.git({ "show", ":outside.txt" }))
@@ -232,7 +225,7 @@ describe("Popup staging trees", function()
       assert.is_true(vim.api.nvim_win_is_valid(session.modified_win))
       local win = deleted and session.original_win or session.modified_win
       vim.api.nvim_win_set_cursor(win, { 1, 0 })
-      invoke(win, "Stage hunk under cursor")
+      invoke(win, "s")
       eventually(function()
         local indexed = repo.git({ "ls-files", "--", "boundary.txt" }) ~= ""
         return indexed ~= deleted and node_at(root.panes[2], "boundary.txt") ~= nil
@@ -243,7 +236,7 @@ describe("Popup staging trees", function()
       preview(session, root.panes[2], "boundary.txt", before, after)
       win = deleted and session.original_win or session.modified_win
       vim.api.nvim_win_set_cursor(win, { 1, 0 })
-      invoke(win, "Unstage hunk under cursor")
+      invoke(win, "s")
       eventually(function()
         local indexed = repo.git({ "ls-files", "--", "boundary.txt" }) ~= ""
         return indexed == deleted and node_at(root, "boundary.txt") ~= nil
@@ -285,12 +278,12 @@ describe("Popup staging trees", function()
     repo.write_file("a.txt", { "after" })
     repo.write_file("nested/new.txt", { "new" })
     local _, root = open("a.txt")
-    invoke(root.panes[2].winid, "Stage all files")
+    invoke(root.panes[2].winid, "S")
     eventually(function()
       return repo.git({ "show", ":a.txt" }) == "after\n" and #root.data.status_result.unstaged == 0
     end)
     assert.equals("new\n", repo.git({ "show", ":nested/new.txt" }))
-    invoke(root.winid, "Unstage all files")
+    invoke(root.winid, "U")
     eventually(function()
       return repo.git({ "diff", "--cached", "--name-only" }) == "" and #root.data.status_result.staged == 0
     end)

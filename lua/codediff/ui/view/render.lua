@@ -250,6 +250,21 @@ function M.update(session, data, changes)
   if not ok then
     error(err)
   end
+  require("codediff.ui.view.actions.hunk").refresh_selection(session.tabpage)
 end
+
+vim.api.nvim_create_autocmd("User", {
+  group = vim.api.nvim_create_augroup("CodeDiffSingleFileLoaded", { clear = true }),
+  pattern = "CodeDiffVirtualFileLoaded",
+  callback = function(event)
+    local buf = event.data and event.data.buf
+    for tabpage, session in pairs(require("codediff.ui.lifecycle.session").get_active_diffs()) do
+      local side = session.single_side
+      if side and not session.closing and session[side .. "_bufnr"] == buf then
+        require("codediff.ui.lifecycle").update_diff_result(tabpage, core.render_whole_file(buf, side))
+      end
+    end
+  end,
+})
 
 return M

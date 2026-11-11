@@ -16,26 +16,42 @@ After installing the plugin and running |:CodeDiff|, you can:
 - Review a pull request without checking it out
 - Compare two files or directories
 
-The default side-by-side status view is a popup in the current tab. Unstaged
-files are above staged files on the left; Before and After occupy the middle
-and right. Each file tree has independent folder expansion and selection.
+The default status view is a popup in the current tab, including clean repos.
+Narrow Unstaged and Staged trees sit on the left; numbered Before and After
+diffs occupy the middle and right. The bottom statusline is hidden in review.
 
-  Tab / Shift-Tab   Cycle panes
-  Enter            Preview file / expand folder
-  -                Stage or unstage selected file/folder, including descendants
-  <leader>hs / hu   Stage / unstage the hunk at the diff cursor
-  S / U            Stage / unstage everything (from either tree)
-  q                Close popup, preserving the underlying editor
-  gf               Close popup and open selected file in the originating editor
+  h / :CodeDiff help  Show shortcuts (the command also works outside review)
+  Tab / Shift-Tab    Cycle panes
+  i / k, arrows      Move up / down
+  j / l              Collapse / expand folder or select file (trees)
+  Enter              Preview file / toggle folder (trees)
+  s                  Stage/unstage file or folder (trees), current hunk (diffs)
+  S / U              Stage / unstage everything (trees)
+  [ / ]              Previous / next hunk
+  r                  Confirm rejecting selected unstaged hunk (diffs)
+  c                  Commit message popup, showing current HEAD
+  z                  Confirm stash of tracked changes; keep untracked files
+  b / w              Separate read-only branch / worktree lists
+  q / Ctrl-q         Close popup and restore the underlying editor
 
-The popup disables restore/discard and diff-copy shortcuts. Conflict files add
-a Result pane. Revision, history and explicit inline views retain tab layouts.
+Active hunks have > gutter markers, emphasized line numbers, and a Hunk N/M
+footer. Rejection keeps staged changes but cannot be undone by Git. Reject
+and stash refuse unsaved affected buffers; save in the editor first.
+
+The commit popup enters message input; Ctrl-s commits only the index and
+Ctrl-q cancels. Git failures keep the draft. A changed HEAD blocks submission.
+Branch and worktree lists do not change the checkout. Normal editor keymaps
+return after review closes. Conflicts add a Result pane; revision, history
+and explicit inline views retain their tab layouts and configured mappings.
 
 ==============================================================================
 COMMANDS                                                  *codediff-commands*
 
 :CodeDiff [args]
     Open the CodeDiff UI. See |codediff-usage| for available modes.
+
+:CodeDiff help
+    Show review shortcuts, or the active revision/history view's keymaps.
 
 :CodeDiff install
 :CodeDiff install!

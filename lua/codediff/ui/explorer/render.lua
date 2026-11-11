@@ -83,7 +83,7 @@ function M.create(data, tabpage, width)
     pane.tree:render()
     keymaps_module.setup(pane)
 
-    if options.auto_open_on_cursor then
+    if options.auto_open_on_cursor and not popup then
       for _, key in ipairs({ "j", "k", "<Down>", "<Up>" }) do
         lifecycle.set_buf_keymap(tabpage, pane.bufnr, "n", key, function()
           vim.cmd("normal! " .. (key == "<Down>" and "j" or key == "<Up>" and "k" or key))
