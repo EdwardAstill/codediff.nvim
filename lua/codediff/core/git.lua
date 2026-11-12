@@ -3,6 +3,7 @@ local M = {}
 
 local changes = require("codediff.core.git.changes")
 local content = require("codediff.core.git.content")
+local conflicts = require("codediff.core.git.conflicts")
 local history = require("codediff.core.git.history")
 local refs = require("codediff.core.git.refs")
 local repository = require("codediff.core.git.repository")
@@ -28,6 +29,8 @@ M.delete_local_refs = refs.delete_local_refs
 
 M.clear_cache = content.clear_cache
 M.get_file_content = content.get_file_content
+M.get_merge_inputs = conflicts.get_merge_inputs
+M.get_unmerged = conflicts.get_unmerged
 
 M.get_status = changes.get_status
 M.get_diff_revision = changes.get_diff_revision

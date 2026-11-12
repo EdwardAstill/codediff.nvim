@@ -1,208 +1,239 @@
-local conflict = require('codediff.ui.conflict')
-local lifecycle = require('codediff.ui.lifecycle')
-local assert = require('luassert')
+local conflict = require("codediff.ui.conflict")
+local tracking = require("codediff.ui.conflict.tracking")
+local lifecycle = require("codediff.ui.lifecycle")
 
-describe("Conflict Actions with Extmark Tracking", function()
-  local tabpage
-  local result_bufnr
-  local conflict_blocks
+describe("explicit conflict state", function()
+  local buffers, files, session, tabpage, original_get_session
+
+  local function buffer(lines)
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    buffers[#buffers + 1] = buf
+    return buf
+  end
+
+  local function focus(buf, line)
+    vim.api.nvim_set_current_buf(buf)
+    vim.api.nvim_win_set_cursor(0, { line or 2, 0 })
+  end
+
+  local function result()
+    return vim.api.nvim_buf_get_lines(session.result_bufnr, 0, -1, false)
+  end
+
+  local function save()
+    vim.api.nvim_buf_call(session.result_bufnr, function() vim.cmd("write!") end)
+  end
+
+  local function undo(command)
+    vim.api.nvim_buf_call(session.result_bufnr, function() vim.cmd(command or "undo") end)
+    tracking.sync(session)
+  end
+
+  local function configure()
+    local base = { "head", "base one", "base two", "tail" }
+    session = {
+      result_bufnr = buffer(base),
+      base_bufnr = buffer(base),
+      original_bufnr = buffer({ "head", "incoming one", "incoming two", "tail" }),
+      modified_bufnr = buffer({ "head", "current one", "current two", "tail" }),
+      merge_base_lines = base,
+      result_base_lines = base,
+      conflict_blocks = {},
+    }
+    for line = 2, 3 do
+      session.conflict_blocks[#session.conflict_blocks + 1] = {
+        base_range = { start_line = line, end_line = line + 1 },
+        output1_range = { start_line = line, end_line = line + 1 },
+        output2_range = { start_line = line, end_line = line + 1 },
+      }
+    end
+    local path = vim.fn.tempname()
+    files[#files + 1] = path
+    vim.api.nvim_buf_set_name(session.result_bufnr, path)
+    vim.bo[session.result_bufnr].buftype = ""
+    tracking.initialize_tracking(session.result_bufnr, session.conflict_blocks)
+    focus(session.result_bufnr)
+    return path
+  end
 
   before_each(function()
-    tabpage = 1
-    -- Create a result buffer with some initial content (simulating BASE)
-    -- Lines: 1, 2, 3 (conflict start), 4 (conflict end), 5
-    result_bufnr = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_lines(result_bufnr, 0, -1, false, {
-      "Line 1",
-      "Line 2",
-      "Line 3 (Base Conflict)",
-      "Line 4 (Base Conflict)",
-      "Line 5"
-    })
-
-    -- Define a conflict block covering lines 3-4 (indices 2-4)
-    conflict_blocks = {
-      {
-        base_range = { start_line = 3, end_line = 5 }, -- 1-based, inclusive start, exclusive end? No, usually 1-based logic in Lua
-        -- Let's check logic: apply_to_result uses: 
-        -- vim.api.nvim_buf_get_lines(result_bufnr, start_line - 1, end_line - 1, false)
-        -- So for lines 3 and 4, start_line=3, end_line=5
-        
-        output1_range = { start_line = 1, end_line = 2 }, -- Dummy range for incoming
-        output2_range = { start_line = 1, end_line = 2 }, -- Dummy range for current
-      }
-    }
-
-    -- Mock session
-    local session = {
-      result_bufnr = result_bufnr,
-      conflict_blocks = conflict_blocks,
-      original_bufnr = 998, -- Dummy
-      modified_bufnr = 999, -- Dummy
-      result_base_lines = {
-        "Line 1", "Line 2", "Line 3 (Base Conflict)", "Line 4 (Base Conflict)", "Line 5"
-      }
-    }
-    
-    -- Mock lifecycle.get_session
-    lifecycle.get_session = function(tp)
-      if tp == tabpage then return session end
-      return nil
-    end
-    
-    -- Initialize tracking
-    conflict.initialize_tracking(result_bufnr, conflict_blocks)
+    buffers, files = {}, {}
+    tabpage = vim.api.nvim_get_current_tabpage()
+    original_get_session = lifecycle.get_session
+    lifecycle.get_session = function(candidate) return candidate == tabpage and session or nil end
   end)
 
   after_each(function()
-    if vim.api.nvim_buf_is_valid(result_bufnr) then
-      vim.api.nvim_buf_delete(result_bufnr, { force = true })
+    lifecycle.get_session = original_get_session
+    vim.api.nvim_set_current_buf(vim.api.nvim_create_buf(false, true))
+    for _, buf in ipairs(buffers) do
+      if vim.api.nvim_buf_is_valid(buf) then vim.api.nvim_buf_delete(buf, { force = true }) end
+    end
+    for _, path in ipairs(files) do vim.fn.delete(path) end
+  end)
+
+  it("undoes and redoes Use Base and Reset even without a text change", function()
+    configure()
+    local before = result()
+    assert.is_true(conflict.accept_base(tabpage))
+    assert.same(before, result())
+    assert.equals(1, tracking.unresolved_count(session))
+    undo()
+    assert.equals(2, tracking.unresolved_count(session))
+    undo("redo")
+    assert.equals(1, tracking.unresolved_count(session))
+    assert.equals("base", tracking.get_accepted_side(session, session.conflict_blocks[1]))
+    assert.is_true(conflict.discard(tabpage))
+    assert.equals(2, tracking.unresolved_count(session))
+    undo()
+    assert.equals(1, tracking.unresolved_count(session))
+  end)
+
+  it("requires explicit manual approval, saving does not approve", function()
+    local path = configure()
+    vim.api.nvim_buf_set_lines(session.result_bufnr, 1, 2, true, { "manual" })
+    save()
+    assert.equals(2, tracking.unresolved_count(session))
+    assert.is_not_nil(tracking.stage_error(path))
+    assert.is_true(conflict.mark_resolved(tabpage))
+    assert.equals(1, tracking.unresolved_count(session))
+    undo()
+    assert.equals("manual", result()[2])
+    assert.equals(2, tracking.unresolved_count(session))
+    undo("redo")
+    assert.equals(1, tracking.unresolved_count(session))
+  end)
+
+  it("invalidates only the edited approval across save, undo and redo", function()
+    local path = configure()
+    assert.is_true(conflict.accept_all_incoming(tabpage))
+    save()
+    assert.is_nil(tracking.stage_error(path))
+    vim.api.nvim_buf_set_lines(session.result_bufnr, 2, 3, true, { "edited second" })
+    save()
+    assert.equals(1, tracking.unresolved_count(session))
+    assert.is_false(tracking.is_block_active(session, session.conflict_blocks[1]))
+    assert.is_true(tracking.is_block_active(session, session.conflict_blocks[2]))
+    assert.is_not_nil(tracking.stage_error(path))
+    undo()
+    assert.equals(0, tracking.unresolved_count(session))
+    undo("redo")
+    assert.equals(1, tracking.unresolved_count(session))
+  end)
+
+  it("does not invalidate an adjacent block when inserting at its exclusive end", function()
+    configure()
+    assert.is_true(conflict.accept_all_incoming(tabpage))
+    vim.api.nvim_buf_set_lines(session.result_bufnr, 3, 3, true, { "outside both" })
+    assert.equals(0, tracking.unresolved_count(session))
+    vim.api.nvim_buf_set_lines(session.result_bufnr, 0, 0, true, { "new head" })
+    focus(session.result_bufnr, 3)
+    assert.is_true(conflict.accept_current(tabpage))
+    assert.equals("current one", result()[3])
+  end)
+
+  it("finds the next block rather than the previous block at an exclusive boundary", function()
+    configure()
+    assert.equals(session.conflict_blocks[2], tracking.find_conflict_at_cursor_in_result(session, 3))
+  end)
+
+  it("takes either side from all four cursor contexts", function()
+    configure()
+    for _, buf in ipairs({ session.original_bufnr, session.modified_bufnr, session.base_bufnr, session.result_bufnr }) do
+      focus(buf)
+      assert.is_true(conflict.accept_current(tabpage))
+      assert.equals("current one", result()[2])
+      assert.is_true(conflict.discard(tabpage))
+      assert.equals("base one", result()[2])
     end
   end)
 
-  it("should track conflict block after inserting lines above", function()
-    -- 1. Insert 2 lines at the top of the result buffer
-    vim.api.nvim_buf_set_lines(result_bufnr, 0, 0, false, { "New Line A", "New Line B" })
-    
-    -- Buffer is now:
-    -- New Line A
-    -- New Line B
-    -- Line 1
-    -- Line 2
-    -- Line 3 (Base Conflict)  <-- Should be tracked here (index 4)
-    -- Line 4 (Base Conflict)
-    -- Line 5
-    
-    -- 2. Verify Extmark moved
-    -- We can't easily check internal ID, but we can try to apply a change and see where it goes
-    
-    -- Better: Set up cursor and buffers so `accept_incoming` works.
-    local original_bufnr = vim.api.nvim_create_buf(false, true) -- Create real dummy buffer
-    vim.api.nvim_buf_set_name(original_bufnr, "Original")
-    vim.api.nvim_buf_set_lines(original_bufnr, 0, -1, false, { "Incoming Content" })
-    
-    -- Set up session to point to this buffer
-    local session = lifecycle.get_session(tabpage)
-    session.original_bufnr = original_bufnr
-    
-    -- Set current buffer to original_bufnr and cursor to line 1 (matching output1_range)
-    vim.api.nvim_set_current_buf(original_bufnr)
-    vim.api.nvim_win_set_cursor(0, {1, 0})
-    
-    -- 3. Execute Action
-    conflict.accept_incoming(tabpage)
-    
-    -- 4. Verify Result
-    local result_lines = vim.api.nvim_buf_get_lines(result_bufnr, 0, -1, false)
-    
-    -- Expected:
-    -- New Line A
-    -- New Line B
-    -- Line 1
-    -- Line 2
-    -- Incoming Content   <-- Replaced lines 3-4 (now 5-6)
-    -- Line 5
-    
-    assert.are.equal("New Line A", result_lines[1])
-    assert.are.equal("New Line B", result_lines[2])
-    assert.are.equal("Line 1", result_lines[3])
-    assert.are.equal("Line 2", result_lines[4])
-    assert.are.equal("Incoming Content", result_lines[5])
-    assert.are.equal("Line 5", result_lines[6])
-    assert.are.equal(6, #result_lines)
+  it("uses deterministic Both ordering independent of focus", function()
+    configure()
+    focus(session.original_bufnr)
+    assert.is_true(conflict.accept_both(tabpage))
+    assert.same({ "head", "current one", "incoming one", "base two", "tail" }, result())
+    focus(session.base_bufnr)
+    assert.is_true(conflict.accept_both_reverse(tabpage))
+    assert.same({ "head", "incoming one", "current one", "base two", "tail" }, result())
   end)
 
-  it("should not re-apply change if already resolved", function()
-    local original_bufnr = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_name(original_bufnr, "Original2")
-    vim.api.nvim_buf_set_lines(original_bufnr, 0, -1, false, { "Incoming Content" })
-    
-    local session = lifecycle.get_session(tabpage)
-    session.original_bufnr = original_bufnr
-    
-    vim.api.nvim_set_current_buf(original_bufnr)
-    vim.api.nvim_win_set_cursor(0, {1, 0})
-    
-    -- First Apply
-    local success1 = conflict.accept_incoming(tabpage)
-    assert.is_true(success1)
-    
-    -- Verify first application
-    local result_lines_1 = vim.api.nvim_buf_get_lines(result_bufnr, 0, -1, false)
-    assert.are.equal("Incoming Content", result_lines_1[3]) -- Replaced line 3
-    
-    -- Second Apply (should fail or do nothing)
-    -- Extmark should be gone now
-    local success2 = conflict.accept_incoming(tabpage)
-    assert.is_false(success2)
+  it("keeps metadata by path without a visible session and removes it on wipe", function()
+    local path = configure()
+    assert.is_true(conflict.accept_all_incoming(tabpage))
+    assert.is_not_nil(tracking.stage_error(path))
+    save()
+    local buf = session.result_bufnr
+    session = nil
+    assert.equals(0, tracking.unresolved_count(tracking.get_state(path)))
+    assert.is_nil(tracking.stage_error(path))
+    vim.api.nvim_buf_delete(buf, { force = true })
+    assert.is_nil(tracking.get_state(path))
+    assert.is_not_nil(tracking.stage_error(path))
   end)
 
-  it("should restore conflict state on undo", function()
-    local original_bufnr = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_name(original_bufnr, "Original3")
-    vim.api.nvim_buf_set_lines(original_bufnr, 0, -1, false, { "Incoming Content" })
-    
-    local session = lifecycle.get_session(tabpage)
-    session.original_bufnr = original_bufnr
-    
-    -- Use result buffer as current buffer to allow undo
-    vim.api.nvim_set_current_buf(result_bufnr)
-    -- But we need to switch back to source buffer to trigger action
-    vim.api.nvim_set_current_buf(original_bufnr)
-    vim.api.nvim_win_set_cursor(0, {1, 0})
-    
-    -- 1. Apply Change
-    local success1 = conflict.accept_incoming(tabpage)
-    assert.is_true(success1)
-    
-    -- 2. Undo in Result Buffer
-    vim.api.nvim_set_current_buf(result_bufnr)
-    vim.cmd("undo")
-    
-    -- Verify content reverted
-    local result_lines = vim.api.nvim_buf_get_lines(result_bufnr, 0, -1, false)
-    assert.are.equal("Line 3 (Base Conflict)", result_lines[3])
-    
-    -- 3. Apply Again (Should succeed because Undo restored Extmark)
-    vim.api.nvim_set_current_buf(original_bufnr)
-    local success2 = conflict.accept_incoming(tabpage)
-    assert.is_true(success2)
-    
-    -- Verify content applied again
-    local result_lines_2 = vim.api.nvim_buf_get_lines(result_bufnr, 0, -1, false)
-    assert.are.equal("Incoming Content", result_lines_2[3])
+  it("never replaces an untracked range by searching similar text", function()
+    configure()
+    local before = result()
+    vim.api.nvim_buf_del_extmark(session.result_bufnr, tracking.tracking_ns, session.conflict_blocks[1].extmark_id)
+    assert.is_false(conflict.accept_incoming(tabpage))
+    assert.same(before, result())
   end)
 
-  it("should allow discard (reset to base) even if conflict is resolved", function()
-    local original_bufnr = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_name(original_bufnr, "Original4")
-    vim.api.nvim_buf_set_lines(original_bufnr, 0, -1, false, { "Incoming Content" })
-    
-    local session = lifecycle.get_session(tabpage)
-    session.original_bufnr = original_bufnr
-    
-    vim.api.nvim_set_current_buf(original_bufnr)
-    vim.api.nvim_win_set_cursor(0, {1, 0})
-    
-    -- 1. Apply Incoming (Resolves it)
-    local success1 = conflict.accept_incoming(tabpage)
-    assert.is_true(success1)
-    
-    local result_lines = vim.api.nvim_buf_get_lines(result_bufnr, 0, -1, false)
-    assert.are.equal("Incoming Content", result_lines[3])
-    
-    -- 2. Discard (Should work and reset to Base)
-    local success2 = conflict.discard(tabpage)
-    assert.is_true(success2)
-    
-    local result_lines_2 = vim.api.nvim_buf_get_lines(result_bufnr, 0, -1, false)
-    assert.are.equal("Line 3 (Base Conflict)", result_lines_2[3])
-    
-    -- 3. Accept Incoming AGAIN (Should work because Discard made it Active again)
-    local success3 = conflict.accept_incoming(tabpage)
-    assert.is_true(success3)
-    
-    local result_lines_3 = vim.api.nvim_buf_get_lines(result_bufnr, 0, -1, false)
-    assert.are.equal("Incoming Content", result_lines_3[3])
+  it("resolves empty Base conflicts at BOF and EOF with native undo", function()
+    for _, line in ipairs({ 1, 2 }) do
+      local buf = buffer({ "anchor" })
+      local block = { base_range = { start_line = line, end_line = line } }
+      local current = { result_bufnr = buf, conflict_blocks = { block } }
+      tracking.initialize_tracking(buf, current.conflict_blocks)
+      assert.equals(block, tracking.find_conflict_at_cursor_in_result(current, 1))
+      assert.is_true(tracking.apply(current, { { block = block, lines = {}, resolved = true, accepted = "base" } }))
+      assert.equals(0, tracking.unresolved_count(current))
+      vim.api.nvim_buf_call(buf, function() vim.cmd("undo") end)
+      assert.equals(1, tracking.unresolved_count(current))
+      assert.is_true(tracking.apply(current, { { block = block, lines = { "inserted" }, resolved = true, accepted = "incoming" } }))
+      assert.equals("inserted", vim.api.nvim_buf_get_lines(buf, line - 1, line, true)[1])
+    end
+  end)
+
+  it("rejects externally modified disk content after an approved save", function()
+    local path = configure()
+    assert.is_true(conflict.accept_all_incoming(tabpage))
+    save()
+    assert.is_nil(tracking.stage_error(path))
+    vim.fn.writefile({ "unreviewed external edit" }, path)
+    assert.is_false(vim.bo[session.result_bufnr].modified)
+    assert.is_not_nil(tracking.stage_error(path))
+  end)
+
+  it("Reset retains automatic disjoint edits and is atomic across the file", function()
+    configure()
+    vim.api.nvim_buf_set_lines(session.result_bufnr, 0, 1, true, { "automatic disjoint change" })
+    assert.is_true(conflict.accept_all_current(tabpage))
+    assert.is_true(conflict.discard_all(tabpage))
+    assert.same({ "automatic disjoint change", "base one", "base two", "tail" }, result())
+    assert.equals(2, tracking.unresolved_count(session))
+    undo()
+    assert.same({ "automatic disjoint change", "current one", "current two", "tail" }, result())
+    assert.equals(0, tracking.unresolved_count(session))
+  end)
+
+  it("allows a saved empty Result but rejects an external newline-only change", function()
+    local path = configure()
+    assert.is_true(conflict.accept_all_incoming(tabpage))
+    vim.api.nvim_buf_set_lines(session.result_bufnr, 0, -1, true, {})
+    for _, block in ipairs(session.conflict_blocks) do
+      assert.is_true(tracking.apply(session, { { block = block, resolved = true, accepted = "manual" } }))
+    end
+    save()
+    assert.is_nil(tracking.stage_error(path))
+    local file = assert(io.open(path, "rb"))
+    local saved = file:read("*a")
+    file:close()
+    file = assert(io.open(path, "wb"))
+    file:write(saved == "" and "\n" or "")
+    file:close()
+    assert.is_not_nil(tracking.stage_error(path))
   end)
 end)

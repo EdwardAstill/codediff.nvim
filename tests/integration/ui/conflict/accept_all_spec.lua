@@ -8,8 +8,10 @@ describe("Conflict Accept All Actions", function()
   local original_bufnr
   local modified_bufnr
   local conflict_blocks
+  local original_get_session
 
   before_each(function()
+    original_get_session = lifecycle.get_session
     tabpage = 1
 
     -- Create result buffer with 3 conflict regions
@@ -99,6 +101,7 @@ describe("Conflict Accept All Actions", function()
   end)
 
   after_each(function()
+    lifecycle.get_session = original_get_session
     for _, bufnr in ipairs({ result_bufnr, original_bufnr, modified_bufnr }) do
       if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
         vim.api.nvim_buf_delete(bufnr, { force = true })
@@ -188,7 +191,7 @@ describe("Conflict Accept All Actions", function()
   end)
 
   describe("accept_all_both", function()
-    it("should combine both sides for all conflicts (incoming first by default)", function()
+    it("combines all conflicts Current then Incoming", function()
       local success = conflict.accept_all_both(tabpage)
       assert.is_true(success)
 
@@ -198,15 +201,16 @@ describe("Conflict Accept All Actions", function()
       assert.are.equal("Line 1", lines[1])
       assert.are.equal("Line 2", lines[2])
 
-      -- Conflict 1: incoming then current (4 lines instead of 2)
-      assert.are.equal("Incoming 1a", lines[3])
-      assert.are.equal("Incoming 1b", lines[4])
-      assert.are.equal("Current 1a", lines[5])
-      assert.are.equal("Current 1b", lines[6])
+      -- Conflict 1: current then incoming (4 lines instead of 2)
+      assert.are.equal("Current 1a", lines[3])
+      assert.are.equal("Current 1b", lines[4])
+      assert.are.equal("Incoming 1a", lines[5])
+      assert.are.equal("Incoming 1b", lines[6])
     end)
 
-    it("should respect first_input=2 for current-first ordering", function()
-      local success = conflict.accept_all_both(tabpage, 2)
+    it("keeps Current-first ordering when Incoming has focus", function()
+      vim.api.nvim_set_current_buf(original_bufnr)
+      local success = conflict.accept_all_both(tabpage)
       assert.is_true(success)
 
       local lines = vim.api.nvim_buf_get_lines(result_bufnr, 0, -1, false)

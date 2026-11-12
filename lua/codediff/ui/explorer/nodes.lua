@@ -130,6 +130,7 @@ function M.create_file_nodes(files, git_root, group)
         git_root = git_root,
         group = group,
         line_stats = file.line_stats,
+        merge_input_identity = file.merge_input_identity,
       },
     })
   end
@@ -259,6 +260,7 @@ function M.create_tree_file_nodes(files, git_root, group)
             group = group,
             indent_state = node_indent_state,
             line_stats = file.line_stats,
+            merge_input_identity = file.merge_input_identity,
           },
         })
       end
@@ -328,6 +330,19 @@ local function file_context(node, data, explorer_config)
   local full_path = data.path or node.text
   local filename = full_path:match("([^/]+)$") or full_path
   local directory = data.indent_state and "" or full_path:sub(1, -(#filename + 1))
+  local conflict
+  if data.group == "conflicts" then
+    local tracking = require("codediff.ui.conflict.tracking")
+    local absolute = require("codediff.core.path").make_ref(full_path, data.git_root).absolute
+    local state = tracking.get_state(absolute)
+    if state and data.merge_input_identity ~= nil and state.merge_input_identity ~= data.merge_input_identity then
+      state = nil
+    end
+    conflict = {
+      reviewed = state ~= nil,
+      unresolved_count = state and tracking.unresolved_count(state) or nil,
+    }
+  end
   return {
     path = full_path,
     filename = filename,
@@ -335,6 +350,7 @@ local function file_context(node, data, explorer_config)
     old_path = data.old_path,
     group = data.group,
     stats = context_stats(data.line_stats),
+    conflict = conflict,
     status = data.status_symbol or "",
     status_hl = data.status_color,
     status_right_margin = math.max(0, explorer_config.status_right_margin or 1),

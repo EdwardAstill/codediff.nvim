@@ -92,10 +92,9 @@ function Controller:publish(data, redraw)
   local changed = not inputs.same(self.last, data)
   local result_changed = session.result_bufnr and not vim.deep_equal(self.last and self.last.result, inputs.lines(session.result_bufnr))
   if session.result_bufnr and changed then
-    local seed = session.result_base_lines or {}
-    if not vim.deep_equal(inputs.lines(session.result_bufnr), #seed > 0 and seed or { "" }) then
+    if require("codediff.ui.conflict.tracking").has_work(session) then
       if not self.blocked or not inputs.same(self.blocked, data) then
-        vim.notify("Conflict inputs changed; Result has unsaved edits. Reopen the conflict view to reload its inputs.", vim.log.levels.WARN)
+        vim.notify("Conflict inputs changed; Result edits and resolutions have been preserved. Finish or discard this result before reopening.", vim.log.levels.WARN)
         self.blocked = data
       end
       if result_changed or redraw then
@@ -313,7 +312,7 @@ function M.attach(tabpage)
         return
       end
       local name = vim.api.nvim_buf_get_name(event.buf)
-      local belongs = event.buf == session.original_bufnr or event.buf == session.modified_bufnr or event.buf == session.result_bufnr
+      local belongs = event.buf == session.original_bufnr or event.buf == session.modified_bufnr or event.buf == session.base_bufnr or event.buf == session.result_bufnr
       for _, input in pairs(inputs.describe(session)) do
         belongs = belongs or input.path and input.path.absolute ~= "" and input.path.absolute == name
       end
@@ -502,7 +501,7 @@ end
 
 function M.buffer_changed(buf)
   for tabpage, session in pairs(require("codediff.ui.lifecycle.session").get_active_diffs()) do
-    if buf == session.original_bufnr or buf == session.modified_bufnr or buf == session.result_bufnr then
+    if buf == session.original_bufnr or buf == session.modified_bufnr or buf == session.base_bufnr or buf == session.result_bufnr then
       M.request(tabpage, { buffer = true })
     end
   end
@@ -516,5 +515,25 @@ function M.refresh_result_now(buf)
     end
   end
 end
+
+vim.api.nvim_create_autocmd("User", {
+  group = vim.api.nvim_create_augroup("CodeDiffConflictCounts", { clear = true }),
+  pattern = "CodeDiffConflictChanged",
+  callback = function(event)
+    local path = event.data and event.data.path
+    if not path then return end
+    for _, session in pairs(require("codediff.ui.lifecycle.session").get_active_diffs()) do
+      local panel = session.panel
+      if panel and panel.name == "explorer" and session.git_root then
+        for _, file in ipairs(panel.data.status_result.conflicts or {}) do
+          if vim.fs.joinpath(session.git_root, file.path) == path then
+            notify_panel(panel, { list = true })
+            break
+          end
+        end
+      end
+    end
+  end,
+})
 
 return M

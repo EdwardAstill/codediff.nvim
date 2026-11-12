@@ -25,6 +25,15 @@ local function get_layout(session_config, tabpage)
   return config.options.diff.layout
 end
 
+local function merge_state_error(session_config)
+  if not session_config.conflict then return end
+  local tracking = require("codediff.ui.conflict.tracking")
+  local state = tracking.get_state(session_config.original.absolute)
+  if state and state.merge_input_identity ~= session_config.merge_inputs.identity and tracking.has_work(state) then
+    return "Merge inputs changed; preserving Result. Finish or explicitly discard this working buffer before loading different inputs."
+  end
+end
+
 ---@class SessionConfig
 ---@field panel { name: "explorer"|"history", data: table }? Side panel; nil for a bare diff
 ---@field git_root string?
@@ -36,6 +45,7 @@ end
 ---@field conflict boolean? For merge conflict mode: render both sides against base
 ---@field layout "side-by-side"|"inline"? Optional per-invocation layout override
 ---@field exit_on_close boolean? Exit Neovim when this session closes
+---@field merge_inputs table? Validated immutable merge stages and identity
 ---@field popup table? Native current-tab workspace and saved return window/view
 ---@field line_range table? For history line-range mode: { start_line, end_line }
 
@@ -44,6 +54,23 @@ end
 ---@param on_ready? function Optional callback when view is fully ready (for sync callers)
 ---@return table|nil Result containing diff metadata, or nil if deferred
 function M.create(session_config, filetype, on_ready)
+  if session_config.conflict and not session_config.merge_inputs then
+    require("codediff.ui.refresh.panel").resolve(session_config, function(err, resolved)
+      if err then
+        vim.notify(err, vim.log.levels.ERROR)
+        if on_ready then on_ready(nil, err) end
+        return
+      end
+      M.create(resolved, filetype, on_ready)
+    end)
+    return
+  end
+  local err = merge_state_error(session_config)
+  if err then
+    vim.notify(err, vim.log.levels.ERROR)
+    if on_ready then on_ready(nil, err) end
+    return
+  end
   -- Initialize lifecycle autocmds on first use
   if not lifecycle_initialized then
     lifecycle.setup()
@@ -64,6 +91,27 @@ end
 ---@return boolean success Whether update succeeded
 function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
   if not lifecycle.get_session(tabpage) then
+    return false
+  end
+  if session_config.conflict and not session_config.merge_inputs then
+    local session = lifecycle.get_session(tabpage)
+    local refresh = require("codediff.ui.refresh")
+    local generation = refresh.begin(tabpage, session_config)
+    require("codediff.ui.refresh.panel").resolve(session_config, function(err, resolved)
+      if not refresh.is_current(tabpage, session, generation) then return end
+      if err then
+        vim.notify(err, vim.log.levels.ERROR)
+        refresh.ready(tabpage)
+        return
+      end
+      M.update(tabpage, resolved, auto_scroll_to_first_hunk)
+    end)
+    return true
+  end
+  local err = merge_state_error(session_config)
+  if err then
+    vim.notify(err, vim.log.levels.ERROR)
+    require("codediff.ui.refresh").ready(tabpage)
     return false
   end
   require("codediff.ui.refresh").begin(tabpage, session_config)

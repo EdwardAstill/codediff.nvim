@@ -28,6 +28,7 @@ function M.cycle(ctx, direction)
   if not session then
     return
   end
+  require("codediff.ui.conflict.view.result").restore_maximize(session)
   local explorer = lifecycle.get_panel_view(ctx.tabpage)
   local windows = {}
   for _, pane in ipairs(explorer and (explorer.panes or { explorer }) or {}) do
@@ -35,7 +36,7 @@ function M.cycle(ctx, direction)
       windows[#windows + 1] = pane.winid
     end
   end
-  for _, win in ipairs({ session.original_win, session.modified_win, session.result_win }) do
+  for _, win in ipairs({ session.original_win, session.modified_win, session.base_win, session.result_win }) do
     if win and vim.api.nvim_win_is_valid(win) then
       windows[#windows + 1] = win
     end
@@ -92,6 +93,10 @@ function M.open_in_prev_tab(ctx)
     side = "original"
   elseif current_buf == ctx.modified_bufnr then
     side = "modified"
+  elseif current_buf == session.base_bufnr then
+    side = "base"
+  elseif current_buf == session.result_bufnr then
+    side = "result"
   end
 
   local explorer = lifecycle.get_panel_view(ctx.tabpage)
@@ -103,12 +108,12 @@ function M.open_in_prev_tab(ctx)
     end
   end
 
-  -- Only operate on diff and explorer buffers; ignore history/result silently
+  -- Only operate on diff and explorer buffers.
   if not side and not is_explorer_buf then
     return
   end
 
-  local is_virtual = (side == "original" and lifecycle.is_original_virtual(ctx.tabpage)) or (side == "modified" and lifecycle.is_modified_virtual(ctx.tabpage))
+  local is_virtual = side == "base" or (side == "original" and lifecycle.is_original_virtual(ctx.tabpage)) or (side == "modified" and lifecycle.is_modified_virtual(ctx.tabpage))
 
   -- Resolve target file path
   local target_file
@@ -119,7 +124,7 @@ function M.open_in_prev_tab(ctx)
     end
   elseif is_virtual then
     local original, modified = lifecycle.get_paths(ctx.tabpage)
-    local ref = side == "original" and original or modified
+    local ref = (side == "original" or side == "base") and original or modified
     if not ref or ref.absolute == "" then
       vim.notify("Buffer has no associated file path", vim.log.levels.WARN)
       return

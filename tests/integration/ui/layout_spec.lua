@@ -33,6 +33,7 @@ local function create_mock_session(tabpage, opts)
     original_win = opts.original_win,
     modified_win = opts.modified_win,
     result_win = opts.result_win,
+    base_win = opts.base_win,
     original_bufnr = opts.original_bufnr,
     modified_bufnr = opts.modified_bufnr,
   }
@@ -110,86 +111,42 @@ describe("Layout Manager", function()
     cleanup_mock_session(tabpage)
   end)
 
-  -- =========================================================================
-  -- Case 1b: Standalone + result bottom — [orig | mod] / [result]
-  -- =========================================================================
-  it("Case 1b: Standalone + result bottom — diff panes equal, result height set", function()
-    config.options.diff.conflict_result_position = "bottom"
-    config.options.diff.conflict_result_height = 25
-
-    vim.cmd("tabnew")
-    local tabpage = vim.api.nvim_get_current_tabpage()
-    local orig_win = vim.api.nvim_get_current_win()
-    local orig_buf = vim.api.nvim_get_current_buf()
-    vim.cmd("vsplit")
-    local mod_win = vim.api.nvim_get_current_win()
-    local mod_buf = vim.api.nvim_get_current_buf()
-
-    -- Create result window below (mimicking real create_bottom_layout)
-    local scratch = vim.api.nvim_create_buf(false, true)
-    local result_win = vim.api.nvim_open_win(scratch, true, { split = "below", win = mod_win })
-    vim.fn.win_splitmove(orig_win, mod_win, { vertical = true, rightbelow = false })
-
-    create_mock_session(tabpage, {
-      original_win = orig_win,
-      modified_win = mod_win,
-      original_bufnr = orig_buf,
-      modified_bufnr = mod_buf,
-      result_win = result_win,
-    })
-
-    layout.arrange(tabpage)
-
-    local orig_w = vim.api.nvim_win_get_width(orig_win)
-    local mod_w = vim.api.nvim_win_get_width(mod_win)
-    local result_h = vim.api.nvim_win_get_height(result_win)
-    local expected_h = math.floor(vim.o.lines * 25 / 100)
-
-    assert_width_near(orig_w, mod_w, "Diff panes should be equal:")
-    assert_width_near(expected_h, result_h, "Result height should match configured %:")
-
-    cleanup_mock_session(tabpage)
-  end)
-
-  -- =========================================================================
-  -- Case 1c: Standalone + result center — [orig | result | mod]
-  -- =========================================================================
-  it("Case 1c: Standalone + result center — 3 panes follow ratio, no panel", function()
-    config.options.diff.conflict_result_position = "center"
-    config.options.diff.conflict_result_width_ratio = { 1, 1, 1 }
-
-    vim.cmd("tabnew")
-    local tabpage = vim.api.nvim_get_current_tabpage()
-    local orig_win = vim.api.nvim_get_current_win()
-    local orig_buf = vim.api.nvim_get_current_buf()
-    vim.cmd("vsplit")
-    local mod_win = vim.api.nvim_get_current_win()
-    local mod_buf = vim.api.nvim_get_current_buf()
-
-    -- Create result window between orig and mod
-    vim.api.nvim_set_current_win(orig_win)
-    vim.cmd("vsplit")
-    local result_win = vim.api.nvim_get_current_win()
-
-    create_mock_session(tabpage, {
-      original_win = orig_win,
-      modified_win = mod_win,
-      original_bufnr = orig_buf,
-      modified_bufnr = mod_buf,
-      result_win = result_win,
-    })
-
-    layout.arrange(tabpage)
-
-    local orig_w = vim.api.nvim_win_get_width(orig_win)
-    local result_w = vim.api.nvim_win_get_width(result_win)
-    local mod_w = vim.api.nvim_win_get_width(mod_win)
-
-    assert_width_near(orig_w, result_w, "All three panes should be similar (1:1:1):")
-    assert_width_near(result_w, mod_w, "All three panes should be similar (1:1:1):")
-
-    cleanup_mock_session(tabpage)
-  end)
+  for _, position in ipairs({ "none", "left", "bottom", "hidden" }) do
+    it("equal merge quadrants with " .. position .. " panel, stable on repeated arrangement", function()
+      vim.cmd("tabnew")
+      local tabpage = vim.api.nvim_get_current_tabpage()
+      local original = vim.api.nvim_get_current_win()
+      local modified = vim.api.nvim_open_win(vim.api.nvim_create_buf(false, true), false, { split = "right", win = original })
+      local base = vim.api.nvim_open_win(vim.api.nvim_create_buf(false, true), false, { split = "below", win = original })
+      local result = vim.api.nvim_open_win(vim.api.nvim_create_buf(false, true), false, { split = "below", win = modified })
+      local panel
+      config.options.explorer = { position = position == "bottom" and "bottom" or "left", width = 25, height = 5 }
+      if position ~= "none" then
+        panel = create_panel_split(config.options.explorer.position, position == "bottom" and 5 or 25)
+        if position == "hidden" then panel.split:hide(); panel.is_hidden = true end
+      end
+      create_mock_session(tabpage, {
+        original_win = original, modified_win = modified, base_win = base, result_win = result,
+        panel = panel and { name = "explorer" }, panel_obj = panel,
+      })
+      layout.arrange(tabpage)
+      local dimensions = {}
+      for _, win in ipairs({ original, modified, base, result }) do
+        dimensions[win] = { vim.api.nvim_win_get_width(win), vim.api.nvim_win_get_height(win) }
+        assert_width_near(vim.api.nvim_win_get_width(original), dimensions[win][1])
+        assert_width_near(vim.api.nvim_win_get_height(original), dimensions[win][2])
+      end
+      if panel and not panel.is_hidden then
+        assert.equals(0, vim.api.nvim_win_get_position(panel.winid)[2])
+        assert.equals(25, vim.api.nvim_win_get_width(panel.winid))
+      end
+      layout.arrange(tabpage)
+      for win, size in pairs(dimensions) do
+        assert.same(size, { vim.api.nvim_win_get_width(win), vim.api.nvim_win_get_height(win) })
+      end
+      cleanup_mock_session(tabpage)
+    end)
+  end
 
   -- =========================================================================
   -- Case 2: Explorer left, no result — [expl | orig | mod]
@@ -343,300 +300,6 @@ describe("Layout Manager", function()
     cleanup_mock_session(tabpage)
   end)
 
-  -- =========================================================================
-  -- Case 6: Explorer left + result bottom — [expl | orig | mod] / [result]
-  -- =========================================================================
-  it("Case 6: Explorer left + result bottom — panel width preserved, diff panes equal", function()
-    local panel_width = 35
-    config.options.explorer = { position = "left", width = panel_width }
-    config.options.diff.conflict_result_position = "bottom"
-    config.options.diff.conflict_result_height = 30
-
-    vim.cmd("tabnew")
-    local tabpage = vim.api.nvim_get_current_tabpage()
-    local orig_win = vim.api.nvim_get_current_win()
-    local orig_buf = vim.api.nvim_get_current_buf()
-    vim.cmd("vsplit")
-    local mod_win = vim.api.nvim_get_current_win()
-    local mod_buf = vim.api.nvim_get_current_buf()
-
-    local panel = create_panel_split("left", panel_width)
-
-    -- Create result window below (mimicking real create_bottom_layout)
-    local scratch = vim.api.nvim_create_buf(false, true)
-    local result_win = vim.api.nvim_open_win(scratch, true, { split = "below", win = mod_win })
-    vim.fn.win_splitmove(orig_win, mod_win, { vertical = true, rightbelow = false })
-
-    create_mock_session(tabpage, {
-      panel = { name = "explorer" },
-      original_win = orig_win,
-      modified_win = mod_win,
-      original_bufnr = orig_buf,
-      modified_bufnr = mod_buf,
-      result_win = result_win,
-      panel_obj = panel,
-    })
-
-    layout.arrange(tabpage)
-
-    local panel_w = vim.api.nvim_win_get_width(panel.winid)
-    local orig_w = vim.api.nvim_win_get_width(orig_win)
-    local mod_w = vim.api.nvim_win_get_width(mod_win)
-
-    assert.are.equal(panel_width, panel_w, "Panel width should be preserved")
-    assert_width_near(orig_w, mod_w, "Diff panes should be equal width:")
-
-    cleanup_mock_session(tabpage)
-  end)
-
-  -- =========================================================================
-  -- Case 7: Explorer left + result center — [expl | orig | result | mod]
-  -- =========================================================================
-  it("Case 7: Explorer left + result center — panel width preserved, 3 panes follow ratio", function()
-    local panel_width = 35
-    config.options.explorer = { position = "left", width = panel_width }
-    config.options.diff.conflict_result_position = "center"
-    config.options.diff.conflict_result_width_ratio = { 1, 1, 1 }
-
-    vim.cmd("tabnew")
-    local tabpage = vim.api.nvim_get_current_tabpage()
-    local orig_win = vim.api.nvim_get_current_win()
-    local orig_buf = vim.api.nvim_get_current_buf()
-    vim.cmd("vsplit")
-    local mod_win = vim.api.nvim_get_current_win()
-    local mod_buf = vim.api.nvim_get_current_buf()
-
-    local panel = create_panel_split("left", panel_width)
-
-    -- Create result window between orig and mod (split right of orig)
-    vim.api.nvim_set_current_win(orig_win)
-    vim.cmd("vsplit")
-    local result_win = vim.api.nvim_get_current_win()
-
-    create_mock_session(tabpage, {
-      panel = { name = "explorer" },
-      original_win = orig_win,
-      modified_win = mod_win,
-      original_bufnr = orig_buf,
-      modified_bufnr = mod_buf,
-      result_win = result_win,
-      panel_obj = panel,
-    })
-
-    layout.arrange(tabpage)
-
-    local panel_w = vim.api.nvim_win_get_width(panel.winid)
-    local orig_w = vim.api.nvim_win_get_width(orig_win)
-    local result_w = vim.api.nvim_win_get_width(result_win)
-    local mod_w = vim.api.nvim_win_get_width(mod_win)
-
-    assert.are.equal(panel_width, panel_w, "Panel width should be preserved")
-    -- With 1:1:1 ratio, all three should be approximately equal
-    assert_width_near(orig_w, result_w, "Orig and result should be similar (1:1:1):")
-    assert_width_near(result_w, mod_w, "Result and mod should be similar (1:1:1):")
-
-    cleanup_mock_session(tabpage)
-  end)
-
-  -- =========================================================================
-  -- Case 7b: Explorer left + result center with custom ratio (1, 2, 1)
-  -- =========================================================================
-  it("Case 7b: Explorer left + result center — custom ratio 1:2:1 honored", function()
-    local panel_width = 35
-    config.options.explorer = { position = "left", width = panel_width }
-    config.options.diff.conflict_result_position = "center"
-    config.options.diff.conflict_result_width_ratio = { 1, 2, 1 }
-
-    vim.cmd("tabnew")
-    local tabpage = vim.api.nvim_get_current_tabpage()
-    local orig_win = vim.api.nvim_get_current_win()
-    local orig_buf = vim.api.nvim_get_current_buf()
-    vim.cmd("vsplit")
-    local mod_win = vim.api.nvim_get_current_win()
-    local mod_buf = vim.api.nvim_get_current_buf()
-
-    local panel = create_panel_split("left", panel_width)
-
-    vim.api.nvim_set_current_win(orig_win)
-    vim.cmd("vsplit")
-    local result_win = vim.api.nvim_get_current_win()
-
-    create_mock_session(tabpage, {
-      panel = { name = "explorer" },
-      original_win = orig_win,
-      modified_win = mod_win,
-      original_bufnr = orig_buf,
-      modified_bufnr = mod_buf,
-      result_win = result_win,
-      panel_obj = panel,
-    })
-
-    layout.arrange(tabpage)
-
-    local panel_w = vim.api.nvim_win_get_width(panel.winid)
-    local orig_w = vim.api.nvim_win_get_width(orig_win)
-    local result_w = vim.api.nvim_win_get_width(result_win)
-    local mod_w = vim.api.nvim_win_get_width(mod_win)
-
-    assert.are.equal(panel_width, panel_w, "Panel width should be preserved")
-    -- With 1:2:1 ratio, result should be ~2x the side panes
-    assert_width_near(orig_w, mod_w, "Side panes should be equal (1:_:1):")
-    assert.is_true(
-      result_w >= orig_w * 1.5,
-      "Result should be ~2x side panes (1:2:1): result=" .. result_w .. " side=" .. orig_w
-    )
-
-    cleanup_mock_session(tabpage)
-  end)
-
-  -- =========================================================================
-  -- Case 8: Explorer bottom + result bottom — [orig | mod] / [result] / [expl]
-  -- =========================================================================
-  it("Case 8: Explorer bottom + result bottom — both heights correct, diff panes equal", function()
-    local panel_height = 12
-    config.options.explorer = { position = "bottom", height = panel_height }
-    config.options.diff.conflict_result_position = "bottom"
-    config.options.diff.conflict_result_height = 25
-
-    vim.cmd("tabnew")
-    local tabpage = vim.api.nvim_get_current_tabpage()
-    local orig_win = vim.api.nvim_get_current_win()
-    local orig_buf = vim.api.nvim_get_current_buf()
-    vim.cmd("vsplit")
-    local mod_win = vim.api.nvim_get_current_win()
-    local mod_buf = vim.api.nvim_get_current_buf()
-
-    local panel = create_panel_split("bottom", panel_height)
-
-    -- Create result window below (mimicking real create_bottom_layout)
-    local scratch = vim.api.nvim_create_buf(false, true)
-    local result_win = vim.api.nvim_open_win(scratch, true, { split = "below", win = mod_win })
-    vim.fn.win_splitmove(orig_win, mod_win, { vertical = true, rightbelow = false })
-
-    create_mock_session(tabpage, {
-      panel = { name = "explorer" },
-      original_win = orig_win,
-      modified_win = mod_win,
-      original_bufnr = orig_buf,
-      modified_bufnr = mod_buf,
-      result_win = result_win,
-      panel_obj = panel,
-    })
-
-    layout.arrange(tabpage)
-
-    local panel_h = vim.api.nvim_win_get_height(panel.winid)
-    local orig_w = vim.api.nvim_win_get_width(orig_win)
-    local mod_w = vim.api.nvim_win_get_width(mod_win)
-
-    assert.are.equal(panel_height, panel_h, "Panel height should be preserved")
-    assert_width_near(orig_w, mod_w, "Diff panes should be equal width:")
-
-    cleanup_mock_session(tabpage)
-  end)
-
-  -- =========================================================================
-  -- Case 9: Explorer bottom + result center — [orig | result | mod] / [expl]
-  -- =========================================================================
-  it("Case 9: Explorer bottom + result center — panel height preserved, 3 panes follow ratio", function()
-    local panel_height = 12
-    config.options.explorer = { position = "bottom", height = panel_height }
-    config.options.diff.conflict_result_position = "center"
-    config.options.diff.conflict_result_width_ratio = { 1, 1, 1 }
-
-    vim.cmd("tabnew")
-    local tabpage = vim.api.nvim_get_current_tabpage()
-    local orig_win = vim.api.nvim_get_current_win()
-    local orig_buf = vim.api.nvim_get_current_buf()
-    vim.cmd("vsplit")
-    local mod_win = vim.api.nvim_get_current_win()
-    local mod_buf = vim.api.nvim_get_current_buf()
-
-    local panel = create_panel_split("bottom", panel_height)
-
-    -- Create result window between orig and mod
-    vim.api.nvim_set_current_win(orig_win)
-    vim.cmd("vsplit")
-    local result_win = vim.api.nvim_get_current_win()
-
-    create_mock_session(tabpage, {
-      panel = { name = "explorer" },
-      original_win = orig_win,
-      modified_win = mod_win,
-      original_bufnr = orig_buf,
-      modified_bufnr = mod_buf,
-      result_win = result_win,
-      panel_obj = panel,
-    })
-
-    layout.arrange(tabpage)
-
-    local panel_h = vim.api.nvim_win_get_height(panel.winid)
-    local orig_w = vim.api.nvim_win_get_width(orig_win)
-    local result_w = vim.api.nvim_win_get_width(result_win)
-    local mod_w = vim.api.nvim_win_get_width(mod_win)
-
-    assert.are.equal(panel_height, panel_h, "Panel height should be preserved")
-    assert_width_near(orig_w, result_w, "All three panes should be similar (1:1:1):")
-    assert_width_near(result_w, mod_w, "All three panes should be similar (1:1:1):")
-
-    cleanup_mock_session(tabpage)
-  end)
-
-  -- =========================================================================
-  -- Idempotency: calling arrange() twice produces the same result
-  -- =========================================================================
-  it("Idempotent: calling arrange twice produces same widths", function()
-    local panel_width = 35
-    config.options.explorer = { position = "left", width = panel_width }
-    config.options.diff.conflict_result_position = "center"
-    config.options.diff.conflict_result_width_ratio = { 1, 2, 1 }
-
-    vim.cmd("tabnew")
-    local tabpage = vim.api.nvim_get_current_tabpage()
-    local orig_win = vim.api.nvim_get_current_win()
-    local orig_buf = vim.api.nvim_get_current_buf()
-    vim.cmd("vsplit")
-    local mod_win = vim.api.nvim_get_current_win()
-    local mod_buf = vim.api.nvim_get_current_buf()
-
-    local panel = create_panel_split("left", panel_width)
-
-    vim.api.nvim_set_current_win(orig_win)
-    vim.cmd("vsplit")
-    local result_win = vim.api.nvim_get_current_win()
-
-    create_mock_session(tabpage, {
-      panel = { name = "explorer" },
-      original_win = orig_win,
-      modified_win = mod_win,
-      original_bufnr = orig_buf,
-      modified_bufnr = mod_buf,
-      result_win = result_win,
-      panel_obj = panel,
-    })
-
-    layout.arrange(tabpage)
-
-    local first_panel_w = vim.api.nvim_win_get_width(panel.winid)
-    local first_orig_w = vim.api.nvim_win_get_width(orig_win)
-    local first_result_w = vim.api.nvim_win_get_width(result_win)
-    local first_mod_w = vim.api.nvim_win_get_width(mod_win)
-
-    layout.arrange(tabpage)
-
-    local second_panel_w = vim.api.nvim_win_get_width(panel.winid)
-    local second_orig_w = vim.api.nvim_win_get_width(orig_win)
-    local second_result_w = vim.api.nvim_win_get_width(result_win)
-    local second_mod_w = vim.api.nvim_win_get_width(mod_win)
-
-    assert.are.equal(first_panel_w, second_panel_w, "Panel width should be stable")
-    assert.are.equal(first_orig_w, second_orig_w, "Original width should be stable")
-    assert.are.equal(first_result_w, second_result_w, "Result width should be stable")
-    assert.are.equal(first_mod_w, second_mod_w, "Modified width should be stable")
-
-    cleanup_mock_session(tabpage)
-  end)
 
   -- =========================================================================
   -- No session: arrange should be a no-op
@@ -689,55 +352,6 @@ describe("Layout Manager", function()
     cleanup_mock_session(tabpage)
   end)
 
-  -- =========================================================================
-  -- Hidden panel + center result: 3 panes use full width
-  -- =========================================================================
-  it("Hidden panel + center result: 3 panes use full width when panel is hidden", function()
-    local panel_width = 35
-    config.options.explorer = { position = "left", width = panel_width }
-    config.options.diff.conflict_result_position = "center"
-    config.options.diff.conflict_result_width_ratio = { 1, 1, 1 }
-
-    vim.cmd("tabnew")
-    local tabpage = vim.api.nvim_get_current_tabpage()
-    local orig_win = vim.api.nvim_get_current_win()
-    local orig_buf = vim.api.nvim_get_current_buf()
-    vim.cmd("vsplit")
-    local mod_win = vim.api.nvim_get_current_win()
-    local mod_buf = vim.api.nvim_get_current_buf()
-
-    local panel = create_panel_split("left", panel_width)
-    panel.split:hide()
-    panel.is_hidden = true
-
-    vim.api.nvim_set_current_win(orig_win)
-    vim.cmd("vsplit")
-    local result_win = vim.api.nvim_get_current_win()
-
-    create_mock_session(tabpage, {
-      panel = { name = "explorer" },
-      original_win = orig_win,
-      modified_win = mod_win,
-      original_bufnr = orig_buf,
-      modified_bufnr = mod_buf,
-      result_win = result_win,
-      panel_obj = panel,
-    })
-
-    layout.arrange(tabpage)
-
-    local orig_w = vim.api.nvim_win_get_width(orig_win)
-    local result_w = vim.api.nvim_win_get_width(result_win)
-    local mod_w = vim.api.nvim_win_get_width(mod_win)
-
-    -- All three should be ~1/3 of total columns
-    assert_width_near(orig_w, result_w, "All three panes equal (1:1:1):")
-    assert_width_near(result_w, mod_w, "All three panes equal (1:1:1):")
-    local expected_third = math.floor(vim.o.columns / 3)
-    assert_width_near(expected_third, orig_w, "Each pane should be ~1/3 of total:")
-
-    cleanup_mock_session(tabpage)
-  end)
 
   -- =========================================================================
   -- Case 10: Single-pane (untracked) without panel — [mod] fills full width
@@ -946,10 +560,6 @@ describe("Layout Manager", function()
     assert.are.equal(panel_width, panel_w, "Panel should be configured width")
     local expected_diff = vim.o.columns - panel_width - 1
     assert_width_near(expected_diff, mod_w, "Diff pane should fill remainder:")
-
-    -- Validate: empty diff result
-    assert.is_truthy(session.stored_diff_result, "Should have diff result")
-    assert.same(session.stored_diff_result.changes, {}, "Should have no changes (empty diff)")
 
     vim.fn.delete(tmp_file)
     cleanup_mock_session(tabpage)

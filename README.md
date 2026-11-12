@@ -4,8 +4,6 @@
 
 This is Edward Astill's personal fork of [CodeDiff](https://github.com/esmuellert/codediff.nvim). Its default Git status view is a floating four-pane review workspace, not upstream's full-tab Explorer. It retains the VSCode-style diff engine, live refresh, revision/history views, and conflict resolution.
 
-Git review does not require an agent. The optional [OMP handoff](#send-a-hunk-to-omp) adds a selected hunk to your existing OMP draft only when requested; it never submits a model request automatically.
-
 ## Quick start
 
 After [installation](#installation), save your file edits and run `:CodeDiff` inside a Git repository.
@@ -16,9 +14,131 @@ After [installation](#installation), save your file edits and run `:CodeDiff` in
 4. Inspect **Staged** before committing. Press `c`, check the displayed HEAD, type a message, then Ctrl-s to commit the index.
 5. Press `q` to close review and restore your editor's keys and chrome.
 
-Need to undo a choice? [Unstage and revert are different](#stage-unstage-and-revert). Other tasks: [stash](#stash-tracked-changes), [branches/worktrees](#inspect-branches-and-worktrees), [OMP](#send-a-hunk-to-omp), [troubleshooting](#safety-and-troubleshooting), and [upgrading](#upgrading-this-fork).
+Need to undo a choice? [Unstage and revert are different](#stage-unstage-and-revert). Other tasks: [stash](#stash-tracked-changes), [branches/worktrees](#inspect-branches-and-worktrees), [merge conflicts](#conflict-and-merge-controls), [troubleshooting](#safety-and-troubleshooting), and [upgrading](#upgrading-this-fork).
 
 `:CodeDiff help` loads the plugin and opens shortcuts without starting a review. For the full manual with lazy.nvim, run `:Lazy load codediff.nvim`, then `:help codediff`. The load step is unnecessary once CodeDiff has already been used in that Neovim instance.
+
+## Shortcuts
+
+Normal-mode keys below are defaults unless noted. **The status popup has fixed review controls, except when [merging](#conflict-and-merge-controls); native revision/history/inline views use configurable controls.** `<leader>` means your configured Neovim leader, not necessarily Space.
+
+### Review controls
+
+These fixed bindings apply to ordinary diffs in the popup opened by plain `:CodeDiff`, not merge panes, `:CodeDiff --inline`, or revision/history tabs.
+
+| Focus | Key | Action |
+| --- | --- | --- |
+| Workspace | `q` / `Ctrl-q` | Close review and restore ordinary editor controls |
+| Workspace | `h` / `:CodeDiff help` | Show shortcuts; `h` closes the help popup |
+| Workspace | `Ctrl-s` / `Ctrl-Shift-s` | Show help, **not** write a file |
+| Workspace | `Tab` / `Shift-Tab` | Next / previous pane |
+| Workspace | `i` / `k` | Move up / down |
+| Workspace | `[` / `]` | Previous / next hunk |
+| Trees | Up / Down | Move up / down |
+| Trees | `j` / `l` | Collapse / expand folder; `l` also previews a file |
+| Trees | Enter / double-click | Preview file or toggle folder/group |
+| Trees | `s` | Stage/unstage the selected file or directory |
+| Trees | `S` / `U` | Stage / unstage all changes in the repository |
+| Diffs | `j` / `l` | Move left / right |
+| Diffs | `s` | Stage an unstaged hunk or unstage a staged hunk |
+| Diffs | `r` | Confirm Revert of the working-file hunk to its comparison baseline |
+| Workspace | `c` | Commit message popup |
+| Workspace | `z` | Confirm tracked-change stash |
+| Workspace | `b` / `w` | Separate read-only local branch / worktree lists |
+
+**Save, stage, and commit are different:** save writes a file; stage changes Git's index; commit records the index. File/folder staging reads disk, while hunk staging can use unsaved buffer content. Save edits before review when you want disk and index to match. Revert changes the working file, not the index; [read the baseline and safety rules](#stage-unstage-and-revert) before confirming.
+
+### Native revision, history, and inline views
+
+Use `g?` or `:CodeDiff help` inside a native view to see its active bindings. These defaults are configurable under `keymaps.view`; actions requiring a working file or Git index do not apply to immutable revision comparisons.
+
+| Key | Action |
+| --- | --- |
+| `q` | Close the diff workspace |
+| `]c` / `[c` | Next / previous hunk |
+| `]f` / `[f` | Next / previous file in Explorer/history (commit in single-file history) |
+| `<leader>b` / `<leader>e` | Toggle / focus Explorer (Explorer views only) |
+| `gf` | Open the file in the previous tab, or a new tab before this one |
+| `-` / `gS` | Stage/unstage selected entry / switch staged and unstaged versions (Explorer views) |
+| `<leader>hs` / `<leader>hu` | Stage / unstage the hunk under the diff cursor |
+| `<leader>hr` | Confirm Revert to the original comparison baseline; leave index unchanged |
+| `do` / `dp` | Get / put a change between editable buffers; inline `do` restores the original hunk and `dp` does nothing |
+| `ih` | Hunk text object in Visual/operator-pending mode, e.g. `vih`, `yih` |
+| `t` / `gc` | Toggle side-by-side/inline layout / compact unchanged regions |
+| `gm` | Align moved blocks (side-by-side with `diff.compute_moves = true`) |
+| `g?` | Show active shortcuts |
+
+`do`/`dp` edit buffer content, not Git's index, and are not CodeDiff merge-resolution bindings. Native editable buffers use ordinary Neovim editing and `:write`; the popup's save-key interception does not apply here.
+
+### Native Explorer and history panels
+
+These panel defaults do **not** replace the popup tree controls above. Ordinary `j`/`k` move down/up; `i` here switches list/tree mode rather than moving up.
+
+| Panel | Key | Action |
+| --- | --- | --- |
+| Both | Enter | Select file or expand/collapse an entry |
+| Both | Double-click | Select a file (history also expands/selects commits) |
+| Both | `i` / `R` | Toggle list/tree mode / refresh status or history |
+| Explorer | `K` | Show full path |
+| Explorer | `S` / `U` | Stage / unstage all repository changes |
+| Explorer | `X` | Restore/discard the selected entry's changes |
+| Explorer | `gu` / `gs` | Toggle unstaged / staged group visibility |
+| Both | `zo` / `zc` / `za` | Open / close / toggle a tree fold |
+| Both | `zO` / `zC` / `zA` | Open / close / toggle recursively |
+| Both | `zR` / `zM` | Open / close all tree folds |
+
+History fold keys act on directory nodes; use Enter to expand commits. Configure these under `keymaps.explorer` and `keymaps.history`.
+
+### Conflict and merge controls
+
+Select a file under **Merge Changes**, or use `:CodeDiff merge path/to/file` for a native merge tab scoped to that file. Start the Git merge separately. Both views have a file tree on the left and this fixed grid:
+
+| Incoming / theirs (`:3`, read-only) | Current / ours (`:2`, read-only) |
+| --- | --- |
+| Base (`:1`, read-only) | **Result** (editable working file) |
+
+**Default Result for a fresh Git conflict:** automatic non-conflicting and identical changes, with Base text at unresolved conflicts—not conflict markers. The gutter and file tree show what still needs resolution. Existing Result edits are preserved on file switches and reopening within Neovim; previously edited files are never blindly reseeded, so an existing file may retain conflict markers. Approvals survive only while that buffer remains loaded, not across buffer deletion or Neovim restarts.
+
+Configure the conflict actions below under `keymaps.conflict`. Incoming/Current always mean the same Git stages, regardless of focus; during a rebase, Git's ours/theirs labels can differ from your usual branch perspective. Quit, help, file navigation, and tree focus/visibility use `keymaps.view`; Tab/Shift-Tab and Ctrl-q are fixed.
+
+| Focus | Key | Action |
+| --- | --- | --- |
+| Any merge pane | `]x` / `[x` | Next / previous unresolved conflict; align all panes |
+| Any merge pane | `<leader>ct` / `<leader>co` | Take Incoming / Current for this conflict |
+| Any merge pane | `<leader>cb` / `<leader>cR` | Take Both: Current then Incoming / Incoming then Current |
+| Any merge pane | `<leader>ca` | Use Base and mark this conflict resolved |
+| Any merge pane | `<leader>cm` | Mark the manually edited conflict resolved |
+| Any merge pane | `<leader>cx` | Reset this conflict to Base and mark it unresolved |
+| Any merge pane | `<leader>cT` / `<leader>cO` | Take Incoming / Current for all unresolved conflicts |
+| Any merge pane | `<leader>cB` / `<leader>cX` | Take Both (Current then Incoming) for all unresolved conflicts / reset all |
+| Any merge pane | `u` / `Ctrl-r` | Undo / redo Result text and resolution decisions, including Use Base |
+| Result only | `2do` / `3do` | Take Incoming / Current for this conflict |
+| Any merge pane | `<leader>cs` | Toggle linked vertical scrolling (on by default); horizontal scrolling stays independent |
+| Any merge pane | `<leader>cz` | Maximize / restore the focused pane |
+| Merge workspace | `Tab` / `Shift-Tab`, `<leader>b` / `<leader>e` | Cycle panes; hide / focus the tree |
+| Merge workspace | `]f` / `[f`, `gf` | Next / previous listed file; open the focused file in the previous tab |
+| Merge workspace | `g?`, `q` / `Ctrl-q` | Show merge shortcuts; close |
+
+Result uses ordinary Neovim editing keys, even in the popup: `i` inserts, `h`/`j`/`k`/`l` move normally, and `s` is **not** hunk staging. Use `g?` or `:CodeDiff help` for merge help. Popup trees keep their fixed tree controls, including `s` to stage and `h` for help. A manual edit does **not** resolve a conflict: inspect it and use Mark Resolved. Editing an approved conflict makes it unresolved again. Per-conflict choices can replace an earlier choice; Take All skips already resolved blocks. Reset All resets every conflict, while preserving automatic non-conflicting edits. Both preserves both complete alternatives in the chosen order.
+
+Use `:write` in Result, then `-` to stage the file (`s` in a popup tree also works). CodeDiff blocks file/folder/all staging when any affected conflict is unreviewed, unresolved, unsaved, or based on changed inputs. Hunk staging, unstaging, and Revert cannot bypass conflict review. Tree rows show unresolved counts, or **needs review** before opening a file. Saving is not staging; finish the Git operation separately. External `git add` bypasses these plugin safeguards.
+
+Closing offers **Discard**, **Cancel**, or **Keep changes and close** for unsaved Results. Discard reloads the last on-disk contents; it does not undo an earlier save. Keep retains buffers and undo history. If preserved edits make a conflict's range ambiguous, automatic replacement is refused: finish editing Result manually and Mark Resolved. Binary, missing/deleted, symlink/submodule, differing file-mode, and unsupported rename conflicts must be resolved outside CodeDiff. Text add/add conflicts are supported with an empty Base. See [Git mergetool setup](#merge-tool).
+
+### Child dialogs
+
+| Dialog | Key | Action |
+| --- | --- | --- |
+| Read-only lists/help | `i` / `k` | Move up / down |
+| Read-only lists/help | `q` / Escape / `Ctrl-q` | Close (review help also accepts `h`) |
+| Confirmation | `y` / `n` | Confirm / cancel; `q`, Escape, and `Ctrl-q` also cancel |
+| Commit message | `Ctrl-s` | Commit the index, from Insert or Normal mode |
+| Commit message | Normal-mode `s` | Commit the index |
+| Commit message | `Ctrl-q` | Cancel and discard the message draft |
+
+The list/help rows refer to the review popup's child dialogs, not the native `g?` help window.
+
+The commit composer starts in Insert mode: Escape first returns to Normal mode; Normal-mode `q` or Escape closes it. These scratch dialogs never save a working file. Closing a dialog does not undo a Git operation already submitted.
 
 ## Features
 
@@ -27,10 +147,9 @@ Need to undo a choice? [Unstage and revert are different](#stage-unstage-and-rev
 - **Four-pane review:** Unstaged above Staged on the narrow left; numbered Before and After diffs beside them.
 - **Git staging:** Stage or unstage individual hunks, files, or folders. Revert restores working-file content independently of the index.
 - **Repository actions:** Commit the index, stash tracked changes, and inspect local branches or worktrees in separate popups.
-- **Explicit OMP handoff:** Add the selected hunk with an optional message to an existing draft; ordinary Git review stays independent.
 - **Other comparison modes:** Review revisions, pull requests, and history in native tab layouts.
 - **Focused navigation:** Move between files and hunks, fold unchanged code, and track moved blocks.
-- **Conflict resolution:** Resolve merge conflicts per block or across the whole file.
+- **Conflict resolution:** Fixed Incoming/Current/Base/Result grid, explicit per-block choices, undoable approvals, and safe whole-file staging.
 - **Editor-native context:** Keep Tree-sitter syntax highlighting in revision buffers.
 
 ## Installation
@@ -54,7 +173,7 @@ Need to undo a choice? [Unstage and revert are different](#stage-unstage-and-rev
 }
 ```
 
-To add a launcher, include `keys = { { "<leader>d", "<cmd>CodeDiff<cr>", desc = "Review changes" } }` in the plugin spec. This is Space d only if your leader is Space. Install [EdwardAstill/omp.nvim](https://github.com/EdwardAstill/omp.nvim) separately if you want the optional `o` handoff; no OMP dependency is needed for Git actions.
+To add a launcher, include `keys = { { "<leader>d", "<cmd>CodeDiff<cr>", desc = "Review changes" } }` in the plugin spec. This is Space d only if your leader is Space.
 
 ### Automatic installation
 
@@ -136,7 +255,7 @@ Both methods automatically place the library in the plugin root directory.
 
 ## Configuration
 
-The full reference below includes settings for native revision/history/inline views. The status popup deliberately fixes its four-pane arrangement, narrow tree sizing, tree view mode, numbering, and [review controls](#review-controls); native `explorer.width`, `position`, `view_mode`, and `keymaps.view`/`keymaps.explorer` bindings are not a popup-layout editor. Setting `diff.layout = "inline"` opts into a native inline status view instead of the popup.
+The full reference below includes settings for native revision/history/inline views. Ordinary status review fixes its four-pane arrangement, narrow tree sizing, tree view mode, numbering, and [review controls](#review-controls); native `explorer.position`, `view_mode`, and keymaps do not customize that popup layer. Merge views instead use the fixed 2×2 grid and [merge controls](#conflict-and-merge-controls); the merge popup respects `explorer.width`, limited by available space. Setting `diff.layout = "inline"` selects native inline status, but conflicts still use the merge grid.
 
 <details>
 <summary><strong>Full configuration reference</strong></summary>
@@ -172,17 +291,13 @@ The full reference below includes settings for native revision/history/inline vi
 
     -- Diff view behavior
     diff = {
-      layout = "side-by-side",             -- Diff layout: "side-by-side" (two panes) or "inline" (single pane with virtual lines)
+      layout = "side-by-side",             -- Ordinary diff layout; merge grid is always fixed
       filler_text = "╱",                   -- Repeated filler pattern; use "" for blank alignment rows
       disable_inlay_hints = true,         -- Disable inlay hints in diff windows for cleaner view
       max_computation_time_ms = 5000,     -- Maximum time for diff computation (VSCode default)
       ignore_trim_whitespace = false,     -- Ignore leading and trailing whitespace changes
       hide_merge_artifacts = false,       -- Hide merge tool temp files (*.orig, *.BACKUP.*, *.BASE.*, *.LOCAL.*, *.REMOTE.*)
-      original_position = "left",         -- Position of original (old) content: "left" or "right"
-      conflict_ours_position = "right",   -- Position of ours (:2) in conflict view: "left" or "right"
-      conflict_result_position = "bottom", -- "bottom" (default): result below diff panes or "center": result between diff panes (three columns)
-      conflict_result_height = 30,         -- Height of result pane in bottom layout (% of total height)
-      conflict_result_width_ratio = { 1, 1, 1 }, -- Width ratio for center layout panes {left, center, right} (e.g., {1, 2, 1} for wider result)
+      original_position = "left",         -- Ordinary original pane: "left" or "right"; does not swap merge roles
       cycle_next_hunk = true,             -- Wrap around when navigating hunks (]c/[c): false to stop at first/last
       cycle_next_file = true,             -- Wrap around when navigating files (]f/[f): false to stop at first/last
       cycle_hunks_across_files = false,   -- ]c/[c at file boundary hops to first/last hunk of next/prev file (explorer/history)
@@ -200,7 +315,7 @@ The full reference below includes settings for native revision/history/inline vi
     explorer = {
       position = "left",  -- Native Explorer: "left" or "bottom"; popup placement is fixed
       hidden = false,  -- Initial visibility state
-      width = 40,         -- Native Explorer width (columns); popup uses its own narrow sizing
+      width = 40,         -- Native Explorer and merge-popup tree width, clamped to available space
       height = 15,        -- Native bottom Explorer height (lines)
       auto_refresh = true,  -- Native file watching with polling fallback; native Explorer also has R
       indent_markers = true,  -- Show indent markers in tree view (│, ├, └)
@@ -246,7 +361,7 @@ The full reference below includes settings for native revision/history/inline vi
       date_format = "%ar",  -- Commit date rendering: "%ar" (default, relative), "%ai" (ISO), "%ad" (git default), or any strftime string (e.g. "%Y/%m/%d %H:%M:%S")
     },
 
-    -- Keymaps for revision/history/inline views; the status popup uses review controls below.
+    -- Native views and merge controls; ordinary status review uses fixed popup keys.
     keymaps = {
       view = {
         quit = "q",                    -- Close diff workspace
@@ -306,19 +421,23 @@ The full reference below includes settings for native revision/history/inline vi
         fold_close_all = "zM",      -- Close all folds in tree
       },
       conflict = {
-        accept_incoming = "<leader>ct",  -- Accept incoming (theirs/left) change
-        accept_current = "<leader>co",   -- Accept current (ours/right) change
-        accept_both = "<leader>cb",      -- Accept both changes
-        discard = "<leader>cx",          -- Discard both, keep base
-        -- Accept all (whole file) - uppercase versions
-        accept_all_incoming = "<leader>cT",  -- Accept ALL incoming changes
-        accept_all_current = "<leader>cO",   -- Accept ALL current changes
-        accept_all_both = "<leader>cB",      -- Accept ALL both changes
-        discard_all = "<leader>cX",          -- Discard ALL, reset to base
-        next_conflict = "]x",            -- Jump to next conflict
-        prev_conflict = "[x",            -- Jump to previous conflict
-        diffget_incoming = "2do",        -- Get hunk from incoming (left/theirs) buffer
-        diffget_current = "3do",         -- Get hunk from current (right/ours) buffer
+        accept_incoming = "<leader>ct",     -- Take Incoming (:3)
+        accept_current = "<leader>co",      -- Take Current (:2)
+        accept_both = "<leader>cb",         -- Current then Incoming
+        accept_both_reverse = "<leader>cR", -- Incoming then Current
+        accept_base = "<leader>ca",         -- Use Base, resolved
+        mark_resolved = "<leader>cm",       -- Approve a manual resolution
+        discard = "<leader>cx",             -- Reset to Base, unresolved
+        accept_all_incoming = "<leader>cT",
+        accept_all_current = "<leader>cO",
+        accept_all_both = "<leader>cB",      -- Current then Incoming
+        discard_all = "<leader>cX",
+        next_conflict = "]x",
+        prev_conflict = "[x",
+        toggle_scroll_sync = "<leader>cs",
+        toggle_maximize = "<leader>cz",
+        diffget_incoming = "2do",           -- Result only
+        diffget_current = "3do",            -- Result only
       },
     },
   },
@@ -329,7 +448,7 @@ The full reference below includes settings for native revision/history/inline vi
 
 ### Native keymap configuration
 
-These configurable actions apply to native revision/history/inline views, not the fixed popup key layer. Press `g?` in a native view, or use `:CodeDiff help`, to see its active bindings. `o` is also available on native diff buffers for the optional OMP handoff.
+These configurable actions apply to native revision/history/inline views and merge panes, not ordinary status review's fixed popup layer. Merge choices use `keymaps.conflict`; shared quit/help/file navigation and tree focus/visibility use `keymaps.view`. Hunk actions, layout toggling, compact mode, and move alignment are unavailable during merges. Press `g?` in a native or merge view, or use `:CodeDiff help`, to see active bindings.
 
 Each configurable action accepts a single key or a list of keys:
 
@@ -371,6 +490,8 @@ A layout contains `left` and `right` lists of regions and an optional `min_gap` 
 Each segment is `{ text = string, hl? = highlight }`. `hl` accepts a Neovim highlight group, a `#RGB`/`#RRGGBB` foreground color, or a highlight definition such as `{ fg = "#3fb950", bold = true }`. Omitted highlights use `Normal`; selected file rows retain their selection background.
 
 File contexts contain `path`, `filename`, `directory`, `old_path`, `group`, `stats`, `status`, `status_hl`, `status_right_margin`, `indent`, `indent_hl`, `icon`, and `icon_hl`. Folder contexts contain `name`, `path`, `group`, `file_count`, `stats`, `files`, `indent`, `indent_hl`, `icon`, `icon_hl`, and `expanded`. Group contexts contain `name`, `label`, `file_count`, `stats`, `files`, and `expanded`. `stats` is `nil` when line statistics are disabled.
+
+Conflict file contexts also contain `conflict = { reviewed, unresolved_count }`. The count is `nil` until the current inputs have been reviewed; do not display unknown state as zero.
 
 Folder and group `files` contain `{ path, old_path, group, status, stats }` entries for every represented file. The built-in callbacks are exported by `codediff.ui.explorer.formatters` and return fresh layouts that can be assigned directly or wrapped.
 
@@ -435,34 +556,9 @@ With the default side-by-side layout, `:CodeDiff` opens a popup in the **current
 
 The left trees have no line numbers; the diff panes have absolute line numbers. The normal statusline/mode area is hidden while review is active, with compact hints in the borders. Leaving or closing the popup restores editor chrome. This is a local review keymap layer, not a new Vim editing mode.
 
-Enter previews a file; it does not open that file for ordinary editing. Use Tab/Shift-Tab to move between panes. In a diff, the cursor chooses the hunk: `>` gutter markers, emphasized numbers, and `Hunk N/M` identify it in both panes. The selection remains visible while an action dialog is open. Moving into a tree leaves no active diff hunk; `r` and `o` belong to diff panes, not file rows.
+Enter previews a file; it does not open that file for ordinary editing. Use Tab/Shift-Tab to move between panes. In a diff, the cursor chooses the hunk: `>` gutter markers, emphasized numbers, and `Hunk N/M` identify it in both panes. The selection remains visible while an action dialog is open. Moving into a tree leaves no active diff hunk; `r` belongs to diff panes, not file rows. See the [shortcut reference](#shortcuts) near Quick start.
 
-Added/deleted files can be one-sided comparisons. A conflict adds a Result pane and uses conflict-resolution actions; ordinary Revert does not resolve merge conflicts.
-
-#### Review controls
-
-| Focus | Key | Action |
-| --- | --- | --- |
-| Workspace | `q` / `Ctrl-q` | Close review and restore ordinary editor controls |
-| Workspace | `h` / `:CodeDiff help` | Show shortcuts; `h` closes the help popup |
-| Workspace | `Ctrl-s` / `Ctrl-Shift-s` | Show help, **not** write a file |
-| Workspace | `Tab` / `Shift-Tab` | Next / previous pane |
-| Workspace | `i` / `k` | Move up / down |
-| Workspace | `[` / `]` | Previous / next hunk |
-| Trees | Up / Down | Move up / down |
-| Trees | `j` / `l` | Collapse / expand folder; `l` also previews a file |
-| Trees | Enter / double-click | Preview file or toggle folder/group |
-| Trees | `s` | Stage/unstage the selected file or directory |
-| Trees | `S` / `U` | Stage / unstage all changes in the repository |
-| Diffs | `j` / `l` | Move left / right |
-| Diffs | `s` | Stage an unstaged hunk or unstage a staged hunk |
-| Diffs | `r` | Confirm Revert of the working-file hunk to its comparison baseline |
-| Diffs | `o` | Compose an optional message for the selected hunk's OMP handoff |
-| Workspace | `c` | Commit message popup |
-| Workspace | `z` | Confirm tracked-change stash |
-| Workspace | `b` / `w` | Separate read-only local branch / worktree lists |
-
-Child dialogs have their own controls: `q`/Escape/Ctrl-q close read-only lists; `y` confirms a destructive action and `n` cancels it. Commit and OMP composers start in Insert mode. **Ctrl-q cancels a composer**; Escape first leaves Insert mode rather than necessarily closing it. Normal-mode `q` or Escape then closes it. Closing a draft discards that draft text.
+Added/deleted files can be one-sided comparisons. Selecting a conflict replaces Before/After with the [Incoming/Current/Base/Result grid](#conflict-and-merge-controls) and ordinary editing in Result. It does not retain the popup's diff movement/stage/revert keys.
 
 #### Stage, unstage, and revert
 
@@ -508,20 +604,6 @@ Stash refuses unsaved tracked buffers, including buffers for staged-deleted file
 
 Neither list switches checkout, creates/deletes branches or worktrees, or changes the commit dialog's HEAD. The actions remain available when the repository has no changes.
 
-#### Send a hunk to OMP
-
-Install/configure [EdwardAstill/omp.nvim](https://github.com/EdwardAstill/omp.nvim) separately; normal review does not start or require it.
-
-1. Focus either diff pane and select the hunk with the cursor or `[`/`]`.
-2. Press `o`. The composer captures that hunk before taking focus.
-3. Type an optional message, or leave it blank to send only the hunk.
-4. Ctrl-s adds the message, repository/file paths, comparison revisions, line ranges, and before/after hunk text to the **selected OMP session's existing draft**.
-5. OMP opens above review. Inspect/edit the draft and press Enter **in OMP** only when you want to submit it. Ctrl-q hides OMP and returns to the originating diff pane.
-
-The handoff sends neither the whole file nor unrelated hunks. It preserves existing draft text and uses the captured snapshot, even if the review later changes. Ctrl-q in the composer cancels without sending. Missing OMP or an immediate failed send keeps the composer for retry; later bridge errors are reported by OMP. Queueing a draft is not a model response or a guarantee that an asynchronous delivery succeeded.
-
-`o` also works in native diff views. An OMP proposal's **Reject** action belongs to OMP proposal review; it is not CodeDiff's Git Unstage or working-file Revert.
-
 #### Safety and troubleshooting
 
 | Symptom | What to do |
@@ -534,14 +616,16 @@ The handoff sends neither the whole file nor unrelated hunks. It preserves exist
 | An added/deleted side is blank | This is a one-sided comparison, not a missing preview. |
 | Commit failed | Keep the dialog open to retain the message, fix the reported Git error, and retry; reopen if HEAD changed. |
 | No changes are listed | The popup still supports commit/stash checks and branch/worktree inspection. Check repository/path filters and the selected group. |
-| OMP did not answer | Handoff adds a draft only. Inspect it in OMP and submit manually; check any bridge error before retrying. |
 | Old keys or names remain after updating | Restart Neovim so cached plugin modules and personal mappings reload. |
+| Result has no conflict markers but is unresolved | Expected for a fresh merge: unresolved regions contain Base. Choose Incoming/Current/Both/Use Base, or edit and Mark Resolved; then `:write`. |
+| Taking a side reports an ambiguous conflict range | Existing edits were preserved. Finish the conflict manually in Result and Mark Resolved instead of forcing a replacement. |
+| Merge staging or closing is refused | Read the reported unresolved, unsaved, changed-input, or changed-on-disk condition. Preserve your edits; do not force a quit or external stage to bypass review. |
 
 The popup preserves unsaved buffers when closing or changing files; it is not a save operation. Explicit `:write` and custom edit commands are not a read-only sandbox. Live refresh is enabled by default; if disabled, reopen the popup to reread repository state (native Explorer also has `R`).
 
 ### Revisions and repository commands
 
-Explicit revisions, `--staged`, history, file/directory comparisons, and inline status use native tab layouts with configurable keymaps. `:CodeDiff --inline`, or `diff.layout = "inline"`, opts out of the four-pane popup. Native views use `g?`/`:CodeDiff help`, not the popup's `h`/`c`/`z`/`b`/`w` layer. Their default revert mapping is `<leader>hr`; the personal dotfiles map it to `r`. `o` remains a diff-buffer handoff.
+Explicit revisions, `--staged`, history, file/directory comparisons, and inline status use native tab layouts with configurable keymaps. `:CodeDiff --inline`, or `diff.layout = "inline"`, opts out of the four-pane popup. Native views use `g?`/`:CodeDiff help`, not the popup's `h`/`c`/`z`/`b`/`w` layer. Their default revert mapping is `<leader>hr`; see [native shortcuts](#native-revision-history-and-inline-views).
 
 In the popup, Before is physically left of After. In native views, `diff.original_position` can move the original pane; the Revert baseline still means the **original** comparison version.
 
@@ -730,13 +814,17 @@ By default, history shows the latest 100 non-merge commits. Expand a commit to s
 
 #### Merge Tool
 
-Configure CodeDiff as a Git merge tool, then run `git mergetool` to resolve conflicts:
+For an already conflicted working file, run `:CodeDiff merge path/to/file`, or select the conflict from repository status. Resolve blocks with the [conflict shortcuts](#conflict-and-merge-controls), inspect Result, save with `:write`, then stage separately when using CodeDiff directly. This does not start a branch merge.
+
+Configure CodeDiff as a Git merge tool, then run `git mergetool` to resolve conflicts (the following uses POSIX-shell quoting):
 
 ```bash
 git config --global merge.tool codediff
 git config --global mergetool.codediff.cmd 'nvim "$MERGED" -c "CodeDiff --exit-on-close merge \"$MERGED\""'
 git mergetool
 ```
+
+With `--exit-on-close`, use CodeDiff's `q` / Ctrl-q after resolving and saving Result. That close action refuses unresolved, unsaved, changed-input, or changed-on-disk results. Use `:cquit` to abort with a failing exit status; direct/forced Neovim quit commands bypass CodeDiff's close checks. [Git mergetool](https://git-scm.com/docs/git-mergetool) may ask you to confirm success, and **Git itself stages successfully resolved files** afterward. CodeDiff does not commit or continue the merge automatically.
 
 #### Diff Tool
 
@@ -801,11 +889,12 @@ vim.api.nvim_create_autocmd("User", {
 ## Upgrading this fork
 
 - The default `:CodeDiff` status workflow is now a same-tab popup. Revision/history/file/directory views remain native tabs; opt into native status with `--inline`.
-- The popup uses the [fixed review controls](#review-controls). Old native keys such as `gS`, `g?`, `t`, and configured `<leader>h…` actions are not its control scheme. `gf` is a native-view action, not a popup shortcut.
+- The popup uses the [fixed review controls](#review-controls) for ordinary diffs. Merge panes instead use ordinary editing and the [merge controls](#conflict-and-merge-controls), including `g?`. Native hunk/layout bindings do not apply during a merge.
 - The old **Reject** label is now **Revert**. It restores the working-file hunk to its comparison baseline and does not unstage it.
 - Rename custom `keymaps.view.discard_hunk` settings to `keymaps.view.revert_hunk`; the old key has no compatibility alias. This config controls the native mapping; popup `r` is fixed.
-- `s` is stage/unstage inside review. Ctrl-s is help in the workspace, commit submission in the commit composer, and draft handoff in the OMP composer—not a universal save action.
-- OMP is an optional, explicit draft handoff. Existing OMP proposal accept/reject commands have not been renamed.
+- `s` stages/unstages in ordinary review and popup trees, but retains normal editing in merge Result. Ctrl-s is review help or commit submission—not a universal save action. Use `:write` in Result.
+- The former draft-handoff integration has been removed. CodeDiff no longer binds `o`; remove any personal mappings that invoke the removed integration.
+- Merge layout is now fixed. Remove `diff.conflict_ours_position`, `diff.conflict_result_position`, `diff.conflict_result_height`, and `diff.conflict_result_width_ratio`; there are no positional aliases. Take Both now has an explicit order, and Use Base is distinct from Reset.
 
 After updating this fork or its personal configuration, restart Neovim. See the [current Git recipes](docs/git-integration.md) and [documentation index](docs/README.md); the development-history collection is not the current command reference.
 

@@ -36,10 +36,6 @@ M.defaults = {
     ignore_trim_whitespace = false, -- Ignore leading/trailing whitespace changes (like diffopt+=iwhite)
     hide_merge_artifacts = false, -- Hide merge tool temp files (*.orig, *.BACKUP.*, *.BASE.*, *.LOCAL.*, *.REMOTE.*)
     original_position = "left", -- Position of original (old) content: "left" or "right"
-    conflict_ours_position = "right", -- Position of ours (:2) in conflict view: "left" or "right" (independent of original_position)
-    conflict_result_position = "bottom", -- Position of result buffer in conflict view: "bottom" or "center"
-    conflict_result_height = 30, -- Height of result buffer in bottom layout (percentage of total height)
-    conflict_result_width_ratio = { 1, 1, 1 }, -- Width ratio for center layout panes {left, center, right} (e.g., {1, 2, 1} for wider result)
     cycle_next_hunk = true, -- Wrap around when navigating hunks (]c/[c): true = cycle, false = stop at first/last
     cycle_next_file = true, -- Wrap around when navigating files (]f/[f): true = cycle, false = stop at first/last
     cycle_hunks_across_files = false, -- ]c/[c at file boundary jumps to first/last hunk of next/prev file (explorer/history mode)
@@ -164,17 +160,22 @@ M.defaults = {
     },
     -- Conflict mode keymaps (only active in merge conflict views)
     conflict = {
-      accept_incoming = "<leader>ct", -- Accept incoming (theirs/left) change
-      accept_current = "<leader>co", -- Accept current (ours/right) change
-      accept_both = "<leader>cb", -- Accept both changes (incoming first)
-      discard = "<leader>cx", -- Discard both, keep base
+      accept_incoming = "<leader>ct", -- Take Incoming for this conflict
+      accept_current = "<leader>co", -- Take Current for this conflict
+      accept_both = "<leader>cb", -- Take Both: Current, then Incoming
+      accept_both_reverse = "<leader>cR", -- Take Both: Incoming, then Current
+      accept_base = "<leader>ca", -- Use Base and mark this conflict resolved
+      mark_resolved = "<leader>cm", -- Approve a manually edited conflict
+      discard = "<leader>cx", -- Reset this conflict to its unresolved seed
       -- Accept all (whole file) - uppercase versions like diffview
       accept_all_incoming = "<leader>cT", -- Accept ALL incoming changes
       accept_all_current = "<leader>cO", -- Accept ALL current changes
-      accept_all_both = "<leader>cB", -- Accept ALL both changes
-      discard_all = "<leader>cX", -- Discard ALL, reset to base
+      accept_all_both = "<leader>cB", -- Take Both for all conflicts: Current, then Incoming
+      discard_all = "<leader>cX", -- Reset all conflicts to their unresolved seeds
       next_conflict = "]x", -- Jump to next conflict
       prev_conflict = "[x", -- Jump to previous conflict
+      toggle_scroll_sync = "<leader>cs", -- Link/unlink vertical scrolling in the merge grid
+      toggle_maximize = "<leader>cz", -- Maximize/restore the focused merge pane
       -- Vimdiff-style numbered diffget (from result buffer)
       diffget_incoming = "2do", -- Get hunk from incoming (left/theirs) buffer
       diffget_current = "3do", -- Get hunk from current (right/ours) buffer

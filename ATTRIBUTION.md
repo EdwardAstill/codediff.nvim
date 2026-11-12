@@ -62,9 +62,9 @@ SOFTWARE.
 
 ---
 
-## External Dependencies
+## Earlier UI Dependency
 
-The following dependencies are not bundled but are required for full functionality:
+Upstream's earlier explorer used nui.nvim. This fork uses the native UI helpers in `lua/codediff/ui/lib/`; nui.nvim is not a required installation dependency.
 
 ### nui.nvim
 

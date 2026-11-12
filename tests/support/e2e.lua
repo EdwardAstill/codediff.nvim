@@ -206,7 +206,7 @@ function M.panes(screen)
   return screen:exec([[
     local s = refresh_session()
     local result = { tab = refresh_test.tab, focused = vim.api.nvim_get_current_win(), layout = s.layout }
-    for _, side in ipairs({ 'original', 'modified', 'result' }) do
+    for _, side in ipairs({ 'original', 'modified', 'base', 'result' }) do
       local buf, win = s[side .. '_bufnr'], s[side .. '_win']
       if buf and vim.api.nvim_buf_is_valid(buf) then
         local pane = { buf = buf, lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false), win = win }
@@ -269,7 +269,7 @@ end
 function M.watch_grid(screen)
   local rectangles = screen:exec([[
     local s, rectangles, seen = refresh_session(), {}, {}
-    for _, side in ipairs({ 'original', 'modified', 'result' }) do
+    for _, side in ipairs({ 'original', 'modified', 'base', 'result' }) do
       local win = s[side .. '_win']
       if win and vim.api.nvim_win_is_valid(win) and not seen[win] then
         seen[win] = true
@@ -454,7 +454,7 @@ function M.reveal(screen, side, text)
   ]],
     { text }
   )
-  M.feed(screen, "zz")
+  screen:command("normal! zz")
   M.expect_text(screen, side, text)
 end
 

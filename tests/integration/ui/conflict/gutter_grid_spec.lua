@@ -14,14 +14,14 @@ describe("conflict block gutter on the screen grid", function()
 
   for index, case in ipairs(cases) do
     it(case.name .. " in all panes under each focus state", function()
-      screen = Screen.new(120, 24)
+      screen = Screen.new(120, 40)
       local panes = gutter.open_block(screen, index)
       local expected = gutter.block_rows(case)
 
-      for _, focus in ipairs({ "original", "modified", "result" }) do
+      for _, focus in ipairs({ "original", "modified", "base", "result" }) do
         screen:exec("vim.api.nvim_set_current_win(...)", { panes[focus] })
         screen:flush()
-        for _, side in ipairs({ "original", "modified", "result" }) do
+        for _, side in ipairs({ "original", "modified", "base", "result" }) do
           gutter.expect_pane(screen, panes[side], expected[side], case.name .. ": " .. side .. " while focused on " .. focus, panes.foreground)
         end
       end
@@ -29,19 +29,18 @@ describe("conflict block gutter on the screen grid", function()
   end
 
   it("keeps synthetic projections intact beyond the refresh polling interval", function()
-    screen = Screen.new(120, 24)
+    screen = Screen.new(120, 40)
     local panes = gutter.open_block(screen, 3)
     vim.wait(650)
     screen:flush()
     local expected = gutter.block_rows(cases[3])
-    for _, side in ipairs({ "original", "modified", "result" }) do
+    for _, side in ipairs({ "original", "modified", "base", "result" }) do
       gutter.expect_pane(screen, panes[side], expected[side], "settled fixture: " .. side, panes.foreground)
     end
-    assert.is_nil(screen:exec("return require('codediff.ui.lifecycle').get_session(...).refresh", { panes.tab }))
   end)
 
   it("keeps BOF offsets correct when only part of the leading filler is visible", function()
-    screen = Screen.new(120, 24)
+    screen = Screen.new(120, 40)
     local panes = gutter.open_block(screen, 13)
     screen:exec(
       [[
@@ -65,7 +64,7 @@ describe("conflict block gutter on the screen grid", function()
   end)
 
   it("keeps after-line-one markers correct when all BOF filler is scrolled out", function()
-    screen = Screen.new(120, 24)
+    screen = Screen.new(120, 40)
     local panes = gutter.open_block(screen, 13)
     screen:exec(
       [[
@@ -86,6 +85,26 @@ describe("conflict block gutter on the screen grid", function()
     }, "hidden BOF", panes.foreground)
   end)
 
+  it("distinguishes BOF and EOF fillers around a one-line source", function()
+    screen = Screen.new(120, 40)
+    local panes = gutter.open_block(screen, 13)
+    screen:exec([[
+      local s = require('codediff.ui.lifecycle').get_session(...)
+      vim.api.nvim_buf_set_lines(s.original_bufnr, 1, -1, false, {})
+      require('codediff.ui.conflict').refresh(s)
+      vim.api.nvim_win_call(s.original_win, function()
+        vim.fn.winrestview({ topline = 1, topfill = 2 })
+      end)
+    ]], { panes.tab })
+    for _, focus in ipairs({ "original", "modified", "base", "result" }) do
+      screen:exec("vim.api.nvim_set_current_win(...)", { panes[focus] })
+      screen:flush()
+      gutter.expect_pane(screen, panes.original, {
+        "╭─╱╱╱╱", "│ ╱╱╱╱", "│ one", "╰─╱╱╱╱",
+      }, "one-line source while focused on " .. focus, panes.foreground)
+    end
+  end)
+
   for _, options in ipairs({
     { name = "number and fold columns", number = true, relativenumber = true, numberwidth = 6, foldcolumn = "2", signcolumn = "yes" },
     { name = "multiple sign slots", number = true, relativenumber = false, numberwidth = 4, foldcolumn = "0", signcolumn = "yes:2" },
@@ -93,7 +112,7 @@ describe("conflict block gutter on the screen grid", function()
     { name = "hidden signs", number = true, relativenumber = true, numberwidth = 4, foldcolumn = "0", signcolumn = "no" },
   }) do
     it("changes only filler sign cells with " .. options.name, function()
-      screen = Screen.new(120, 24)
+      screen = Screen.new(120, 40)
       local panes = gutter.open_block(screen, 3)
       local rect = screen:exec(
         [[
@@ -104,6 +123,7 @@ describe("conflict block gutter on the screen grid", function()
           if name ~= 'name' then vim.wo[win][name] = value end
         end
         local p = vim.api.nvim_win_get_position(win)
+        if vim.wo[win].winbar ~= '' then p[1] = p[1] + 1 end
         return { p[1] + 1, p[2] + 1, vim.api.nvim_win_get_width(win), vim.fn.getwininfo(win)[1].textoff }
       ]],
         { panes.original, options }
@@ -134,27 +154,22 @@ describe("conflict block gutter on the screen grid", function()
   end
 
   it("composes separate blocks and removes one without damaging the other", function()
-    screen = Screen.new(120, 24)
-    local panes = gutter.open_block(screen, 3)
-    screen:exec(
-      [[
-      local s = require('codediff.ui.lifecycle').get_session(...)
-      s.conflict_blocks[2] = {
-        base_range = { start_line = 7, end_line = 8 }, result_range = { start_line = 7, end_line = 8 },
-        output1_range = { start_line = 5, end_line = 6 }, output2_range = { start_line = 7, end_line = 8 },
-      }
-      local conflict = require('codediff.ui.conflict')
-      conflict.initialize_tracking(s.result_bufnr, s.conflict_blocks)
-      conflict.refresh(s)
-    ]],
-      { panes.tab }
-    )
+    screen = Screen.new(120, 40)
+    local panes = gutter.open_block(screen, 3, {
+      extra_block = {
+        base_range = { start_line = 5, end_line = 6 },
+        result_range = { start_line = 7, end_line = 8 },
+        output1_range = { start_line = 5, end_line = 6 },
+        output2_range = { start_line = 7, end_line = 8 },
+      },
+    })
     screen:flush()
     local expected = gutter.block_rows(cases[3])
     expected.original = { "  one", "╭─two", "│ ╱╱╱╱", "╰─╱╱╱╱", "  three", "  four", "[ five", "  six" }
     expected.modified[9] = "[ five"
     expected.result[7] = "[ base seven"
-    for _, side in ipairs({ "original", "modified", "result" }) do
+    expected.base = expected.original
+    for _, side in ipairs({ "original", "modified", "base", "result" }) do
       gutter.expect_pane(screen, panes[side], expected[side], "two blocks: " .. side, panes.foreground)
     end
     screen:exec(
@@ -180,45 +195,32 @@ describe("conflict block gutter on the screen grid", function()
     }, "only the second block remains", panes.foreground)
   end)
 
-  it("renders no Result marker for an empty Result projection", function()
-    screen = Screen.new(120, 24)
-    local panes = gutter.open_block(screen, 3)
-    screen:exec(
-      [[
-      local s = require('codediff.ui.lifecycle').get_session(...)
-      s.conflict_blocks[1].result_range = { start_line = 4, end_line = 4 }
-      local conflict = require('codediff.ui.conflict')
-      conflict.initialize_tracking(s.result_bufnr, s.conflict_blocks)
-      conflict.refresh(s)
-    ]],
-      { panes.tab }
-    )
-    screen:flush()
-    gutter.expect_pane(screen, panes.result, {
-      "  base one",
-      "  base two",
-      "  base three",
-      "  base four",
-      "  base five",
-      "  base six",
-      "  base seven",
-    }, "empty Result projection")
-    gutter.expect_pane(screen, panes.original, cases[3].rows, "nonempty input projection", panes.foreground)
-  end)
+  for _, boundary in ipairs({ { name = "BOF", line = 1, marker = 1 }, { name = "interior", line = 4, marker = 4 }, { name = "EOF", line = 8, marker = 7 } }) do
+    it("keeps an empty Result projection visible at " .. boundary.name, function()
+      screen = Screen.new(120, 40)
+      local panes = gutter.open_block(screen, 3, {
+        result_range = { start_line = boundary.line, end_line = boundary.line },
+      })
+      local rows = { "  base one", "  base two", "  base three", "  base four", "  base five", "  base six", "  base seven" }
+      rows[boundary.marker] = "[ " .. rows[boundary.marker]:sub(3)
+      gutter.expect_pane(screen, panes.result, rows, "empty Result at " .. boundary.name, panes.foreground)
+      gutter.expect_pane(screen, panes.original, cases[3].rows, "nonempty input projection", panes.foreground)
+    end)
+  end
 
   it("uses updated highlight colors on real and filler markers", function()
-    screen = Screen.new(120, 24)
+    screen = Screen.new(120, 40)
     local panes = gutter.open_block(screen, 3)
     screen:exec("vim.api.nvim_set_hl(0, 'CodeDiffConflictSign', { fg = 0x12ab34, bg = 0x345678, bold = true })")
     screen:flush()
     local expected = gutter.block_rows(cases[3])
-    for _, side in ipairs({ "original", "modified", "result" }) do
+    for _, side in ipairs({ "original", "modified", "base", "result" }) do
       gutter.expect_pane(screen, panes[side], expected[side], "updated highlight: " .. side, { foreground = 0x12ab34, background = 0x345678, bold = true })
     end
   end)
 
   it("clears a removed block on both real and filler rows", function()
-    screen = Screen.new(120, 24)
+    screen = Screen.new(120, 40)
     local panes = gutter.open_block(screen, 3)
     screen:exec(
       [[

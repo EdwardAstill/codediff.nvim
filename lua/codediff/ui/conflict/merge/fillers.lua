@@ -130,4 +130,50 @@ function M.compute_merge_fillers_and_conflicts(base_to_input1_diff, base_to_inpu
   }, conflict_left_changes, conflict_right_changes
 end
 
+-- Reuse the merge groups for all three base-relative diffs, including live Result.
+function M.compute_grid_fillers(incoming_diff, current_diff, result_diff)
+  local fillers = { {}, {}, {}, {} } -- Incoming, Current, Base, Result
+  local totals = { 0, 0, 0, 0 }
+  local function align(lines)
+    local row = 0
+    for side, line in ipairs(lines) do
+      row = math.max(row, line + totals[side])
+    end
+    for side, line in ipairs(lines) do
+      local count = row - line - totals[side]
+      if count > 0 then
+        fillers[side][#fillers[side] + 1] = { after_line = line - 1, count = count }
+        totals[side] = totals[side] + count
+      end
+    end
+  end
+  for _, group in ipairs(compute_mapping_alignments(incoming_diff.changes, current_diff.changes, result_diff.changes)) do
+    local base = group.base_range
+    local ranges = { group.output1_range, group.output2_range, base, group.output3_range }
+    align({ ranges[1].start_line, ranges[2].start_line, base.start_line, ranges[4].start_line })
+    local anchors = {}
+    for source = 1, 3 do
+      local range = group["output" .. source .. "_range"]
+      anchors[source] = {}
+      for _, point in ipairs(get_alignments(base.start_line, base.end_line, range.start_line, range.end_line, base.start_line, base.end_line, group["inner" .. source], {})) do
+        if point.base_line and point.input1_line and point.base_line > base.start_line and point.base_line < base.end_line then
+          anchors[source][point.base_line] = point.input1_line
+        end
+      end
+    end
+    local common = {}
+    for line in pairs(anchors[1]) do
+      if anchors[2][line] and anchors[3][line] then
+        common[#common + 1] = line
+      end
+    end
+    table.sort(common)
+    for _, line in ipairs(common) do
+      align({ anchors[1][line], anchors[2][line], line, anchors[3][line] })
+    end
+    align({ ranges[1].end_line, ranges[2].end_line, base.end_line, ranges[4].end_line })
+  end
+  return fillers
+end
+
 return M

@@ -2,7 +2,7 @@
 
 The Lua suite runs in Neovim with the in-tree framework; no Plenary/Busted
 installation is needed. Build the native library first (`make build`). Native
-algorithm tests remain in `c-diff-core/tests/` and run with `make test-c`.
+algorithm tests remain in `libvscode-diff/tests/` and run with `make test-c`.
 
 ## Directory contract
 
@@ -114,7 +114,7 @@ local fixture = require("tests.fixtures.refresh_repo")
 - `support/init.lua` exposes plugin waiters and `project_root`. Tests must not
   infer the checkout root by counting their own parent directories.
 - `support/e2e.lua` drives embedded UI workflows. `support/gutter.lua` drives
-  focused renderer checks. `support/keymaps.lua` captures mapping matrices.
+  focused renderer checks. `support/keymaps.lua` inspects buffer-local mappings.
 - `framework/screen.lua` owns generic RPC transport and screen-grid observation,
   not feature fixtures or business assertions.
 

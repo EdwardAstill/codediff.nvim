@@ -57,7 +57,7 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
     is_conflict = is_conflict,
   }
 
-  if session and session.popup then
+  if session and session.popup and not is_conflict then
     local function map(key, action, desc)
       lifecycle.set_tab_keymap(tabpage, "n", key, action, { desc = desc })
     end
@@ -111,9 +111,6 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
         lifecycle.set_buf_keymap(tabpage, buf, "n", "r", function()
           hunk.revert_hunk(ctx)
         end, { desc = "Revert hunk to comparison baseline" })
-        lifecycle.set_buf_keymap(tabpage, buf, "n", "o", function()
-          require("codediff.ui.view.actions.omp").send_hunk(ctx)
-        end, { desc = "Send hunk to OMP draft" })
       end
     end
     -- Panel-specific horizontal keys must win over the tab-wide spatial keys.
@@ -132,13 +129,24 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
       lifecycle.close(tabpage)
     end, { desc = "Close codediff tab" })
   end
+  if is_conflict then
+    lifecycle.set_tab_keymap(tabpage, "n", "<C-q>", function()
+      lifecycle.close(tabpage)
+    end, { desc = "Close merge workspace" })
+    lifecycle.set_tab_keymap(tabpage, "n", "<Tab>", function()
+      panes.cycle(ctx, 1)
+    end, { desc = "Next merge pane" })
+    lifecycle.set_tab_keymap(tabpage, "n", "<S-Tab>", function()
+      panes.cycle(ctx, -1)
+    end, { desc = "Previous merge pane" })
+  end
 
 
   -- Hunk navigation (]c, [c)
-  if keymaps.next_hunk then
+  if keymaps.next_hunk and not is_conflict then
     lifecycle.set_tab_keymap(tabpage, "n", keymaps.next_hunk, navigation.next_hunk, { desc = "Next hunk" })
   end
-  if keymaps.prev_hunk then
+  if keymaps.prev_hunk and not is_conflict then
     lifecycle.set_tab_keymap(tabpage, "n", keymaps.prev_hunk, navigation.prev_hunk, { desc = "Previous hunk" })
   end
 
@@ -158,13 +166,13 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
   -- Skipped in conflict mode: the merge view uses 2do/3do on the result pane
   -- instead. Not claiming the keys here means any mapping the user already had
   -- on do/dp is handed back for the duration of the merge, rather than deleted.
-  if keymaps.diff_get and not is_conflict and not (session and session.popup) then
+  if keymaps.diff_get and not is_conflict then
     local desc = is_inline and "Revert hunk to original" or "Get change from other buffer"
     lifecycle.set_tab_keymap(tabpage, "n", keymaps.diff_get, function()
       diffget.diff_get(ctx)
     end, { desc = desc })
   end
-  if keymaps.diff_put and not is_conflict and not (session and session.popup) then
+  if keymaps.diff_put and not is_conflict then
     local desc = is_inline and "Accept change (no-op in inline)" or "Put change to other buffer"
     lifecycle.set_tab_keymap(tabpage, "n", keymaps.diff_put, function()
       diffget.diff_put(ctx)
@@ -175,12 +183,12 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
       panes.open_in_prev_tab(ctx)
     end, { desc = "Open buffer in previous tab" })
   end
-  if keymaps.toggle_layout and not (session and session.popup) then
+  if keymaps.toggle_layout and not is_conflict then
     lifecycle.set_tab_keymap(tabpage, "n", keymaps.toggle_layout, function()
       require("codediff.ui.view").toggle_layout(tabpage)
     end, { desc = "Toggle diff layout" })
   end
-  if keymaps.toggle_compact then
+  if keymaps.toggle_compact and not is_conflict then
     lifecycle.set_tab_keymap(tabpage, "n", keymaps.toggle_compact, function()
       compact.toggle(tabpage)
     end, { desc = "Toggle compact mode" })
@@ -239,10 +247,10 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
   -- Only set on diff buffers, not explorer (S/U conflict with stage_all/unstage_all)
   local hunk_opts = { noremap = true, silent = true, nowait = true }
   local diff_bufs = {}
-  if original_bufnr and vim.api.nvim_buf_is_valid(original_bufnr) then
+  if not is_conflict and original_bufnr and vim.api.nvim_buf_is_valid(original_bufnr) then
     table.insert(diff_bufs, original_bufnr)
   end
-  if modified_bufnr and vim.api.nvim_buf_is_valid(modified_bufnr) then
+  if not is_conflict and modified_bufnr and vim.api.nvim_buf_is_valid(modified_bufnr) then
     table.insert(diff_bufs, modified_bufnr)
   end
   for _, bufnr in ipairs(diff_bufs) do
@@ -256,14 +264,11 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
         hunk.unstage_hunk(ctx)
       end, vim.tbl_extend("force", hunk_opts, { desc = "Unstage hunk under cursor" }))
     end
-    if keymaps.revert_hunk and not (session and session.popup) then
+    if keymaps.revert_hunk then
       lifecycle.set_buf_keymap(tabpage, bufnr, "n", keymaps.revert_hunk, function()
         hunk.revert_hunk(ctx)
       end, vim.tbl_extend("force", hunk_opts, { desc = "Revert hunk to comparison baseline" }))
     end
-    lifecycle.set_buf_keymap(tabpage, bufnr, "n", "o", function()
-      require("codediff.ui.view.actions.omp").send_hunk(ctx)
-    end, vim.tbl_extend("force", hunk_opts, { desc = "Send hunk to OMP draft" }))
 
     -- Hunk textobject (ih) - select hunk lines in visual/operator-pending mode
     if keymaps.hunk_textobject then
@@ -273,17 +278,27 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
     end
   end
 
-  if keymaps.align_move and not is_inline and config.options.diff.compute_moves then
+  if keymaps.align_move and not is_inline and not is_conflict and config.options.diff.compute_moves then
     lifecycle.set_tab_keymap(tabpage, "n", keymaps.align_move, function()
       move.align_move(ctx)
     end, { desc = "Align moved code block" })
+  end
+
+  if is_conflict and session.popup then
+    local explorer = lifecycle.get_panel_view(tabpage)
+    for _, pane in ipairs(explorer and (explorer.panes or { explorer }) or {}) do
+      require("codediff.ui.explorer.keymaps").setup(pane)
+      lifecycle.set_buf_keymap(tabpage, pane.bufnr, "n", { "h", "<C-s>", "<C-S-s>" }, function()
+        require("codediff.ui.keymap_help").toggle(tabpage)
+      end, { desc = "Merge help" })
+    end
   end
 
   lifecycle.end_keymap_scope(tabpage, "view")
 
   -- Keep compact mode in sync when the diff view is (re)built — applies the
   -- configured default on open and re-folds on file switches (no-op if off).
-  compact.refresh(tabpage)
+  if not is_conflict then compact.refresh(tabpage) end
 end
 
 return M

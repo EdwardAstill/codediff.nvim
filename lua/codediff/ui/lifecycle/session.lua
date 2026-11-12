@@ -16,7 +16,7 @@ local keymap = require("codediff.keymap")
 --   tabpage_id = {
 --     original_bufnr, modified_bufnr, original_win, modified_win,
 --     panel = { name = "explorer"|"history", view = table? }?, -- nil for a bare diff
---     merge = boolean?, -- 3-way merge view; result_bufnr only says if the pane exists
+--     merge = boolean?, -- Four-pane merge view; result_bufnr only says if the pane exists
 --     git_root = string?,
 --     original = Path,
 --     modified = Path,
@@ -29,9 +29,10 @@ local keymap = require("codediff.keymap")
 --     compact_mode = boolean, -- session preference; folds may be inactive with no hunks
 --     changedtick = { original = number, modified = number },
 --     mtime = { original = number?, modified = number? },
---     -- Conflict mode result buffer (3-way merge)
---     result_bufnr = number?,  -- Real file buffer reset to BASE
---     result_win = number?,    -- Bottom window for result
+--     -- Merge source snapshots and editable working-file result
+--     base_bufnr = number?, base_win = number?,
+--     result_bufnr = number?,
+--     result_win = number?,
 --     conflict_files = table?, -- { [file_path] = true } tracks files opened in conflict mode
 --   }
 -- }
@@ -106,6 +107,7 @@ function M.create_session(tabpage, session_config, panes)
     layout = "side-by-side",
     popup = session_config.popup,
     exit_on_close = session_config.exit_on_close == true,
+    merge_input_identity = session_config.merge_inputs and session_config.merge_inputs.identity,
     suspended = false,
     single_side = nil,
     stored_diff_result = panes.lines_diff,
@@ -119,7 +121,9 @@ function M.create_session(tabpage, session_config, panes)
       modified = state.get_file_mtime(modified_bufnr),
     },
 
-    -- Conflict mode result buffer (3-way merge)
+    -- Four-pane merge view
+    base_bufnr = nil,
+    base_win = nil,
     result_bufnr = nil,
     result_win = nil,
     conflict_files = {}, -- Tracks files opened in conflict mode for unsaved warning

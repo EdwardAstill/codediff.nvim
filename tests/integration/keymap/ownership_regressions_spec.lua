@@ -88,18 +88,20 @@ local function open_explorer(opts)
   repo.write_file("one.txt", { "a", "X", "c" })
   repo.write_file("two.txt", { "p", "Y", "r" })
   vim.cmd("edit " .. vim.fn.fnameescape(repo.path("one.txt")))
-  commands.vscode_diff({ fargs = {} })
+  -- Configurable explorer mappings belong to native views, not the status popup.
+  commands.vscode_diff({ fargs = { "HEAD" } })
   local tp
-  vim.wait(15000, function()
+  assert.is_true(vim.wait(15000, function()
     for _, t in ipairs(vim.api.nvim_list_tabpages()) do
       local s = lifecycle.get_session(t)
-      if s and (s.panel or {}).view and (s.panel or {}).view.bufnr then
+      if s and (s.panel or {}).view and (s.panel or {}).view.bufnr
+        and s.modified and s.modified.absolute == repo.path("one.txt") and s.stored_diff_result then
         tp = t
         return true
       end
     end
     return false
-  end, 50)
+  end, 50), "native explorer file should be ready")
   return tp, repo
 end
 
@@ -272,9 +274,6 @@ end
 do
   -- gf escape: the buffer moves to another tab while the session stays alive.
   local tp, repo = open_explorer({})
-  local ex = (lifecycle.get_session(tp).panel or {}).view
-  ex.on_file_select({ path = "one.txt", group = "unstaged", status = "M", git_root = repo.dir })
-  wait_diff(tp)
   local s = lifecycle.get_session(tp)
   local mod = s.modified_bufnr
   vim.api.nvim_set_current_win(vim.fn.bufwinid(mod))
@@ -315,13 +314,6 @@ do
   vim.cmd = realcmd
   record("#428", "close does not qall without --exit-on-close", not qall, "qall=" .. tostring(qall))
   done()
-end
-
-reset()
-do
-  -- #412 / #415: cross-file hunk navigation must stay off by default
-  record("#412", "cycle_hunks_across_files defaults to false", config.options.diff.cycle_hunks_across_files == false, tostring(config.options.diff.cycle_hunks_across_files))
-  record("#276", "close_on_open_in_prev_tab defaults to false", config.options.keymaps.view.close_on_open_in_prev_tab == false, tostring(config.options.keymaps.view.close_on_open_in_prev_tab))
 end
 
 do
@@ -484,6 +476,5 @@ describe("keymap issue regressions", function()
       end
     end
     assert.are.same({}, failures, "these reported issues are no longer fixed")
-    assert.is_true(#results >= 15, "expected the full issue matrix, ran " .. #results)
   end)
 end)

@@ -62,6 +62,9 @@ function M.suspend_diff(tabpage)
   session.suspended = true
   M.clear_buffer_highlights(session.original_bufnr)
   M.clear_buffer_highlights(session.modified_bufnr)
+  if session.base_bufnr then
+    M.clear_buffer_highlights(session.base_bufnr)
+  end
   if session.result_bufnr then
     M.clear_buffer_highlights(session.result_bufnr)
   end

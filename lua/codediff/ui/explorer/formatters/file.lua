@@ -23,6 +23,17 @@ return function(ctx)
   end
 
   local right = {}
+  if ctx.conflict then
+    right[#right + 1] = {
+      segments = {
+        {
+          text = ctx.conflict.reviewed and (tostring(ctx.conflict.unresolved_count) .. " unresolved ") or "needs review ",
+          hl = "CodeDiffStatusConflict",
+        },
+      },
+      truncate_priority = 1,
+    }
+  end
   local file_stats = stats.file_segments(ctx.stats)
   if #file_stats > 0 then
     file_stats[#file_stats + 1] = { text = " ", hl = "Normal" }

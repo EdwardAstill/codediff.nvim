@@ -9,8 +9,8 @@ function M.new(session_config)
   local data = vim.deepcopy(panel.data or {})
   data.git_root = session_config.git_root
   if panel.name == "explorer" then
-    data.base_revision = session_config.original_revision
-    data.target_revision = session_config.modified_revision
+    data.base_revision = not session_config.conflict and session_config.original_revision or nil
+    data.target_revision = not session_config.conflict and session_config.modified_revision or nil
     data.status_result = data.status_result or { unstaged = {}, staged = {}, conflicts = {} }
     if not data.git_root then
       data.dir1, data.dir2 = session_config.original.absolute, session_config.modified.absolute
@@ -24,6 +24,22 @@ end
 
 -- Resolve requested refs without replacing their symbolic dependency identities.
 function M.resolve(config, done)
+  if config.conflict and not config.merge_inputs then
+    git.get_merge_inputs(config.git_root, config.original.relative, function(err, merge_inputs)
+      vim.schedule(function()
+        if not err then
+          config = vim.tbl_extend("force", {}, config, {
+            merge_inputs = merge_inputs,
+            original_revision = ":3",
+            modified_revision = ":2",
+            source_revisions = { original = ":3", modified = ":2" },
+          })
+        end
+        done(err, config)
+      end)
+    end)
+    return
+  end
   local remaining, failure = 1, nil
   local function settled(err)
     failure = failure or err
@@ -201,8 +217,7 @@ function M.comparison(panel, file)
   elseif data.git_root then
     local refs = data.source_revisions or {}
     if file.group == "conflicts" then
-      local ours_right = require("codediff.config").options.diff.conflict_ours_position ~= "left"
-      original_revision, modified_revision = ours_right and ":3" or ":2", ours_right and ":2" or ":3"
+      original_revision, modified_revision = ":3", ":2"
       conflict = true
     elseif data.base_revision then
       original_revision = refs.original or data.base_revision

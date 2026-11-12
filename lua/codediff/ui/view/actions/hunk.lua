@@ -12,7 +12,7 @@ local refresh = require("codediff.ui.refresh")
 
 function M.find_hunk_at_cursor(ctx)
   local session = lifecycle.get_session(ctx.tabpage)
-  if not session or not session.stored_diff_result then
+  if not session or session.merge or not session.stored_diff_result then
     return nil, nil
   end
   local diff_result = session.stored_diff_result
@@ -68,6 +68,18 @@ function M.refresh_selection(tabpage)
     return
   end
   M.clear_selection(tabpage)
+  if session.merge then
+    for _, side in ipairs({ "original", "modified", "base", "result" }) do
+      local win = session[side .. "_win"]
+      if win and vim.api.nvim_win_is_valid(win) then
+        local cfg = vim.api.nvim_win_get_config(win)
+        if cfg.relative ~= "" and cfg.border and #cfg.border > 0 then
+          vim.api.nvim_win_set_config(win, { footer = " g? help ", footer_pos = "center" })
+        end
+      end
+    end
+    return
+  end
   if session.closing or vim.api.nvim_get_current_tabpage() ~= tabpage then
     return
   end
@@ -81,15 +93,14 @@ function M.refresh_selection(tabpage)
   })
   local changes = session.stored_diff_result and session.stored_diff_result.changes or {}
   local staged = session.modified_revision == ":0"
-  local footer = string.format(" Hunk %s/%d   s %s   r revert   o OMP   h help ",
+  local footer = string.format(" Hunk %s/%d   s %s   r revert   h help ",
     index or "-", #changes, staged and "unstage" or "stage")
   vim.api.nvim_set_hl(0, "CodeDiffActiveHunk", { bold = true, underline = true, default = true })
   vim.api.nvim_set_hl(0, "CodeDiffActiveHunkSign", { link = "DiagnosticWarn", default = true })
   for _, side in ipairs({ "original", "modified" }) do
     local win, buf = session[side .. "_win"], session[side .. "_bufnr"]
     if win and vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_config(win).relative ~= "" then
-      local label = vim.api.nvim_win_get_width(win) >= #footer and footer or footer:gsub("   o OMP", "")
-      vim.api.nvim_win_set_config(win, { footer = label, footer_pos = "center" })
+      vim.api.nvim_win_set_config(win, { footer = footer, footer_pos = "center" })
     end
     if hunk and buf and vim.api.nvim_buf_is_valid(buf) then
       selection.buffers = selection.buffers or {}
@@ -168,6 +179,30 @@ local function build_hunk_patch(file_path, orig_lines, mod_lines, orig_start, mo
   return table.concat(parts, "\n") .. "\n"
 end
 
+local function patch_options(ctx, session, file_path, reverse)
+  local original, modified = session.original_bufnr, session.modified_bufnr
+  local original_tick = vim.api.nvim_buf_get_changedtick(original)
+  local modified_tick = vim.api.nvim_buf_get_changedtick(modified)
+  local diff = session.stored_diff_result
+  local original_revision, modified_revision = session.original_revision, session.modified_revision
+  return {
+    cached = true,
+    reverse = reverse,
+    paths = { file_path },
+    validate = function()
+      if lifecycle.get_session(ctx.tabpage) ~= session or session.closing
+        or session.original_bufnr ~= original or session.modified_bufnr ~= modified
+        or session.stored_diff_result ~= diff
+        or session.original_revision ~= original_revision or session.modified_revision ~= modified_revision
+        or not vim.api.nvim_buf_is_valid(original) or not vim.api.nvim_buf_is_valid(modified)
+        or vim.api.nvim_buf_get_changedtick(original) ~= original_tick
+        or vim.api.nvim_buf_get_changedtick(modified) ~= modified_tick then
+        return "Comparison changed; select the hunk again"
+      end
+    end,
+  }
+end
+
 function M.stage_hunk(ctx)
   local session = lifecycle.get_session(ctx.tabpage)
   if not session or not session.git_root then
@@ -208,7 +243,7 @@ function M.stage_hunk(ctx)
     session.original.relative == "", session.modified.relative == "")
 
   local git = require("codediff.core.git")
-  git.apply_patch(session.git_root, patch, false, function(err)
+  git.apply_patch(session.git_root, patch, patch_options(ctx, session, file_path, false), function(err)
     if err then
       vim.notify("Failed to stage hunk: " .. err, vim.log.levels.ERROR)
       return
@@ -257,7 +292,7 @@ function M.unstage_hunk(ctx)
     session.original.relative == "", session.modified.relative == "")
 
   local git = require("codediff.core.git")
-  git.apply_patch(session.git_root, patch, true, function(err)
+  git.apply_patch(session.git_root, patch, patch_options(ctx, session, file_path, true), function(err)
     if err then
       vim.notify("Failed to unstage hunk: " .. err, vim.log.levels.ERROR)
       return

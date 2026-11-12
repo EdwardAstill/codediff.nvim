@@ -2,10 +2,11 @@ local M = {}
 
 -- Build a block with deliberately different buffer coordinates in each pane.
 -- Only the public conflict entry points render it; no calculator/backend calls.
-function M.open_block(screen, case_index)
+function M.open_block(screen, case_index, options)
   local panes = screen:exec(
     [[
-    local case_index = ...
+    local case_index, options = ...
+    options = options or {}
     _G.gutter_fixture_ready = false
     local case = require('tests.fixtures.conflict_gutter')[case_index]
     local conflict = require('codediff.ui.conflict')
@@ -20,7 +21,7 @@ function M.open_block(screen, case_index)
       return buf
     end
     local function window(buf, split)
-      if split then vim.cmd('rightbelow vsplit') end
+      if split then vim.cmd(split) end
       local win = vim.api.nvim_get_current_win()
       vim.api.nvim_win_set_buf(win, buf)
       for name, value in pairs({
@@ -37,10 +38,14 @@ function M.open_block(screen, case_index)
     local modified_lines = { 'prefix', 'prefix' }
     vim.list_extend(modified_lines, words)
     local modified_buf = buffer(modified_lines)
-    local modified_win = window(modified_buf, true)
-    local base_lines = { 'base one', 'base two', 'base three', 'base four', 'base five', 'base six', 'base seven' }
-    local result_buf = buffer(base_lines)
-    local result_win = window(result_buf, true)
+    local modified_win = window(modified_buf, 'rightbelow vsplit')
+    local base_buf = buffer(words)
+    vim.api.nvim_set_current_win(original_win)
+    local base_win = window(base_buf, 'belowright split')
+    local result_lines = { 'base one', 'base two', 'base three', 'base four', 'base five', 'base six', 'base seven' }
+    local result_buf = buffer(result_lines)
+    vim.api.nvim_set_current_win(modified_win)
+    local result_win = window(result_buf, 'belowright split')
     local tab = vim.api.nvim_get_current_tabpage()
     lifecycle.create_session(tab, {
       conflict = true, original = path.make_ref('', nil), modified = path.make_ref('', nil),
@@ -49,20 +54,24 @@ function M.open_block(screen, case_index)
       original_win = original_win, modified_win = modified_win,
     })
     lifecycle.set_result(tab, result_buf, result_win)
-    lifecycle.set_result_base_lines(tab, base_lines)
+    local session = lifecycle.get_session(tab)
+    session.base_bufnr, session.base_win = base_buf, base_win
+    lifecycle.set_result_base_lines(tab, result_lines)
     local blocks = {{
-      base_range = { start_line = 4, end_line = 6 },
-      result_range = { start_line = 4, end_line = 6 },
+      base_range = vim.deepcopy(case.range),
+      result_range = options.result_range or { start_line = 4, end_line = 6 },
       output1_range = vim.deepcopy(case.range),
       output2_range = { start_line = case.range.start_line + 2, end_line = case.range.end_line + 2 },
     }}
+    if options.extra_block then blocks[#blocks + 1] = options.extra_block end
     lifecycle.set_conflict_blocks(tab, blocks)
     for anchor, count in pairs(case.fillers) do
       filler.place(original_buf, anchor - 1, count)
       filler.place(modified_buf, anchor + 1, count)
+      filler.place(base_buf, anchor - 1, count)
     end
     conflict.initialize_tracking(result_buf, blocks)
-    conflict.attach_gutter(original_win, modified_win)
+    conflict.attach_gutter(original_win, modified_win, base_win, result_win)
     conflict.setup_refresh_autocmd(tab, result_buf)
     conflict.refresh(lifecycle.get_session(tab))
     -- Synthetic projections are not a filesystem comparison. Let the scheduled
@@ -71,15 +80,17 @@ function M.open_block(screen, case_index)
       require('codediff.ui.refresh').dispose(tab)
       _G.gutter_fixture_ready = true
     end)
-    vim.api.nvim_win_call(original_win, function()
-      vim.fn.winrestview({ topline = 1, topfill = case.fillers[0] or 0 })
-    end)
+    for _, win in ipairs({ original_win, base_win }) do
+      vim.api.nvim_win_call(win, function()
+        vim.fn.winrestview({ topline = 1, topfill = case.fillers[0] or 0 })
+      end)
+    end
     return {
-      tab = tab, original = original_win, modified = modified_win, result = result_win,
+      tab = tab, original = original_win, modified = modified_win, base = base_win, result = result_win,
       foreground = vim.api.nvim_get_hl(0, { name = 'CodeDiffConflictSign', link = false }).fg,
     }
   ]],
-    { case_index }
+    { case_index, options or {} }
   )
   screen:await(function()
     return screen:exec("return gutter_fixture_ready == true")
@@ -121,6 +132,7 @@ function M.block_rows(case)
   return {
     original = case.rows,
     modified = modified,
+    base = case.rows,
     result = { "  base one", "  base two", "  base three", "╭─base four", "╰─base five", "  base six", "  base seven" },
   }
 end
@@ -160,7 +172,7 @@ function M.panes(screen)
     local session = require('codediff.ui.lifecycle').get_session(gutter_test_tab)
     return {
       tab = gutter_test_tab, original = session.original_win, modified = session.modified_win,
-      result = session.result_win, result_buf = session.result_bufnr,
+      base = session.base_win, result = session.result_win, result_buf = session.result_bufnr,
     }
   ]])
 end
@@ -178,7 +190,7 @@ function M.return_to_merge(screen, file)
       [[
       local file = ...
       local s = require('codediff.ui.lifecycle').get_session(gutter_test_tab)
-      return s and s.stored_diff_result ~= nil and s.result_win ~= nil
+      return s and s.stored_diff_result ~= nil and s.base_win ~= nil and s.result_win ~= nil
         and vim.api.nvim_buf_get_name(s.result_bufnr):sub(-#file) == file
     ]],
       { file or "conf.txt" }
@@ -213,6 +225,7 @@ function M.expect_no_conflict_markers(screen, win)
     [[
     local win = ...
     local p = vim.api.nvim_win_get_position(win)
+    if vim.wo[win].winbar ~= '' then p[1] = p[1] + 1 end
     return { p[1] + 1, p[2] + 1, vim.api.nvim_win_get_height(win), vim.api.nvim_win_get_width(win) }
   ]],
     { win }

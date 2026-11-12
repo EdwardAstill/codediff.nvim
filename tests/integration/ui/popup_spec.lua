@@ -19,7 +19,7 @@ local function assert_workspace(session)
 end
 
 local function assert_diff_numbers(session)
-  for _, side in ipairs({ "original", "modified", "result" }) do
+  for _, side in ipairs({ "original", "modified", "base", "result" }) do
     local win = session[side .. "_win"]
     if win then
       assert.is_true(vim.wo[win].number)
@@ -308,6 +308,8 @@ describe("Status popup workspace", function()
     repo.write_file("tracked.txt", { "main", "second" })
     repo.git({ "commit", "-am", "main" }, 0)
     repo.git({ "merge", "feature", "--no-edit" }, 1)
+    vim.o.cmdheight = 2
+    require("codediff.config").options.explorer.width = 28
     local before_layout = vim.fn.winlayout()
     local session = open()
     assert.is_true(vim.wait(10000, function()
@@ -316,15 +318,52 @@ describe("Status popup workspace", function()
     end, 20))
     assert_workspace(session)
     assert.equal("editor", vim.api.nvim_win_get_config(session.result_win).relative)
+    assert.equal("editor", vim.api.nvim_win_get_config(session.base_win).relative)
+    local incoming = vim.api.nvim_win_get_position(session.original_win)
+    local current = vim.api.nvim_win_get_position(session.modified_win)
+    local base = vim.api.nvim_win_get_position(session.base_win)
+    local result_position = vim.api.nvim_win_get_position(session.result_win)
+    assert.equals(incoming[1], current[1])
+    assert.equals(base[1], result_position[1])
+    assert.equals(incoming[2], base[2])
+    assert.equals(current[2], result_position[2])
+    assert.is_true(base[1] > incoming[1])
     assert_diff_numbers(session)
+    assert.equals(2, vim.o.cmdheight)
+    assert.equals(28, vim.api.nvim_win_get_width(session.panel.view.panes[1].winid))
+    require("codediff.ui.view.actions.hunk").refresh_selection(session.tabpage)
+    for _, side in ipairs({ "original", "modified", "base", "result" }) do
+      local win = session[side .. "_win"]
+      local cfg = vim.api.nvim_win_get_config(win)
+      assert.equals("", vim.wo[win].winbar)
+      assert.is_not_nil(cfg.title)
+      local footer = cfg.footer[1][1]
+      assert.is_truthy(footer:find("g?", 1, true))
+      assert.is_nil(footer:find("stage", 1, true))
+      assert.is_nil(footer:find("revert", 1, true))
+    end
+    local result_view = require("codediff.ui.conflict.view.result")
+    vim.api.nvim_set_current_win(session.result_win)
+    result_view.toggle_maximize(session.tabpage)
+    assert.is_not_nil(session.merge_maximized)
+    assert.is_truthy(vim.wo[session.merge_maximized.win].winbar:find("Result", 1, true))
     vim.api.nvim_exec_autocmds("VimResized", {})
+    assert.is_nil(session.merge_maximized)
     assert_diff_numbers(session)
     assert.same(before_layout, vim.fn.winlayout())
+    vim.o.columns, vim.o.lines = 40, 12
+    vim.api.nvim_exec_autocmds("VimResized", {})
+    for _, side in ipairs({ "original", "modified", "base", "result" }) do
+      local cfg = vim.api.nvim_win_get_config(session[side .. "_win"])
+      assert.is_true(cfg.width > 0 and cfg.height > 0)
+      assert.is_true(cfg.col + cfg.width <= vim.o.columns)
+      assert.is_true(cfg.row + cfg.height <= vim.o.lines)
+    end
+    local result = session.result_bufnr
+    vim.api.nvim_buf_set_lines(result, 0, -1, false, { "unsaved merge resolution" })
     vim.fn.confirm = function() return 2 end
     assert.is_false(lifecycle.close(session.tabpage))
     assert.equal(session, lifecycle.get_session(session.tabpage))
-    local result = session.result_bufnr
-    vim.api.nvim_buf_set_lines(result, 0, -1, false, { "unsaved merge resolution" })
     vim.api.nvim_win_close(session.result_win, true)
     assert.is_true(vim.wait(3000, function() return lifecycle.get_session(session.tabpage) == nil end, 10))
     assert.same(before_layout, vim.fn.winlayout())

@@ -14,12 +14,13 @@ This is the current Git guide for Edward Astill's CodeDiff fork. Start with the 
 | Compare two revisions across the repository | `:CodeDiff main HEAD` | Native Explorer; both revisions read-only |
 | Compare one file between revisions | `:CodeDiff file main HEAD` | Native file diff; both sides read-only |
 | Browse recent commits | `:CodeDiff history` | Native history panel; selected commit compared with its parent |
+| Resolve an existing text conflict | `:CodeDiff merge path/to/file` | Incoming/Current/Base/Result grid, with a scoped tree on the left |
 
-The default popup requires the side-by-side layout. A global `diff.layout = "inline"` also selects native inline status; use `:CodeDiff --side-by-side` to request the popup for that invocation. Repository action dialogs (`c`, `z`, `b`, `w`) belong to the status popup, not arbitrary revision tabs.
+The default popup requires the side-by-side layout. A global `diff.layout = "inline"` also selects native inline status; use `:CodeDiff --side-by-side` to request the popup for that invocation. Conflicts always use the fixed merge grid, including when selected from inline status. Repository action dialogs (`c`, `z`, `b`, `w`) belong to ordinary status review, not merge panes or arbitrary revision tabs.
 
 **`:CodeDiff HEAD` is repository-wide.** Use `:CodeDiff file HEAD` when you mean the current file. An empty/scratch buffer is not valid for the `file` revision command; repository review can use the working directory or an explicit `--repo`.
 
-Native tabs have configured keys and `g?`/`:CodeDiff help`. The popup has its own fixed review layer. The personal dotfiles bind Space d to the popup and native Revert to `r`; the plugin's generic native Revert default is `<leader>hr`. Do not assume another user's leader or native mappings match yours.
+Native tabs have configured keys and `g?`/`:CodeDiff help`. Ordinary status review has a fixed key layer; merge panes use ordinary editing plus the [merge shortcuts](../README.md#conflict-and-merge-controls). The personal dotfiles bind Space d to the popup and native Revert to `r`; the plugin's generic native Revert default is `<leader>hr`. Do not assume another user's leader or mappings match yours.
 
 ## HEAD, index, and working file
 
@@ -64,7 +65,6 @@ The full procedures live in the review guide:
 - [Commit staged changes](../README.md#commit-staged-changes): `c` shows only the current HEAD and message; Ctrl-s commits the existing index. It never auto-stages. Empty index/message, changed HEAD, and Git failures retain the draft while its dialog stays open.
 - [Stash tracked changes](../README.md#stash-tracked-changes): `z` confirms a normal `git stash push`, including staged and unstaged tracked changes. Untracked files remain. Unsaved tracked buffers or an unborn/changed HEAD block it. Restoring a stash is a Git/client operation; there is no pop/apply picker here.
 - [Inspect local branches and worktrees](../README.md#inspect-branches-and-worktrees): separate read-only `b` and `w` popups; no checkout/create/delete actions.
-- [Send a hunk to OMP](../README.md#send-a-hunk-to-omp): `o` captures only the selected hunk and offers an optional message. Ctrl-s appends to the selected OMP session's draft, without automatic submission or Git changes. Check the selected OMP session, especially when it belongs to another project.
 
 ## Work in another repository or limit the listing
 
@@ -130,7 +130,11 @@ Expand a commit, then choose its file. `--base WORKING` is different from compar
 
 Use `:CodeDiff pr <number>` to fetch and compare a pull request without checking out its branch. Remote/base/path filters and private-ref cleanup are documented in the [pull-request reference](../README.md#pull-requests).
 
-Merge conflicts use a Result pane and conflict-resolution mappings, not the normal Revert action. Consult `:CodeDiff help` for the active view and the [Git merge-tool configuration](../README.md#merge-tool).
+Select **Merge Changes** or use `:CodeDiff merge path/to/file`. The fixed grid has read-only Incoming, Current, and Base plus an editable Result. Result starts with automatic non-conflicting changes and unresolved Base regions. Use explicit choices or Mark Resolved after manual editing, then `:write` and stage the whole file. CodeDiff refuses affected unopened, unresolved, unsaved, or stale-input conflicts for file/folder/all staging; external `git add` bypasses this safeguard. There is no hunk Revert for merges.
+
+Result edits and approvals survive file switches and reopening while their buffer remains loaded; approvals are not persisted across buffer deletion or restarts. A preserved file may still contain conflict markers. If a range is ambiguous, edit it manually and Mark Resolved rather than forcing a replacement. Vertical scrolling is linked by default, horizontal scrolling independent. See the [merge shortcuts](../README.md#conflict-and-merge-controls) for all supported inputs and actions.
+
+When invoked directly, `:write` saves and `-` stages the resolved file. With [Git mergetool](../README.md#merge-tool), save and use CodeDiff's `q` / Ctrl-q to finish; Git may confirm success and stages successful resolutions itself. Use `:cquit` to abort, not a forced successful quit. Neither workflow automatically commits or continues the merge.
 
 ## Troubleshooting and supported API
 

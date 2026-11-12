@@ -1,4 +1,4 @@
--- Public merge-base and three-way merge commands against real Git fixtures.
+-- Public merge-base and four-pane merge commands against real Git fixtures.
 local h = require("tests.support")
 h.ensure_plugin_loaded()
 
@@ -99,7 +99,7 @@ describe("CodeDiff merge", function()
     end
   end)
 
-  it("opens the three-way merge view with a result pane", function()
+  it("opens immutable merge inputs, editable Result, and a left file tree", function()
     vim.cmd("cd " .. vim.fn.fnameescape(repo.dir))
     vim.cmd("CodeDiff merge conf.txt")
 
@@ -120,14 +120,15 @@ describe("CodeDiff merge", function()
     )
 
     local session = lifecycle.get_session(tabpage)
-    assert.is_true(session.merge == true, "session should be a merge view")
-    assert.not_equal(session.original_win, session.modified_win, "OURS and THEIRS need their own windows")
-
-    local ours = table.concat(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(session.original_win), 0, -1, false), "\n")
-    local theirs = table.concat(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(session.modified_win), 0, -1, false), "\n")
-    assert.is_true(
-      (ours:find("MAIN1", 1, true) ~= nil and theirs:find("FEATURE1", 1, true) ~= nil) or (ours:find("FEATURE1", 1, true) ~= nil and theirs:find("MAIN1", 1, true) ~= nil),
-      "the two panes should hold the two sides of the conflict"
-    )
+    assert.same({ "FEATURE1", "base2", "base3" }, vim.api.nvim_buf_get_lines(session.original_bufnr, 0, -1, false))
+    assert.same({ "MAIN1", "base2", "base3" }, vim.api.nvim_buf_get_lines(session.modified_bufnr, 0, -1, false))
+    assert.same({ "base1", "base2", "base3" }, vim.api.nvim_buf_get_lines(session.base_bufnr, 0, -1, false))
+    assert.same({ "base1", "base2", "base3" }, vim.api.nvim_buf_get_lines(session.result_bufnr, 0, -1, false))
+    for _, buf in ipairs({ session.original_bufnr, session.modified_bufnr, session.base_bufnr }) do
+      assert.is_false(vim.bo[buf].modifiable)
+    end
+    assert.is_true(vim.bo[session.result_bufnr].modifiable)
+    local panel = session.panel.view.winid
+    assert.is_true(vim.api.nvim_win_get_position(panel)[2] < vim.api.nvim_win_get_position(session.original_win)[2])
   end)
 end)

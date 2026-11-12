@@ -68,37 +68,25 @@ describe("conflict resolution commands", function()
     assert.same({ "current" }, vim.api.nvim_buf_get_lines(session.result_bufnr, 0, -1, false))
   end)
 
-  it("smart-combines non-overlapping edits from both sides", function()
+  it("Both preserves the complete Current then Incoming versions", function()
     configure({
       base_lines = { "abc" },
       incoming_lines = { "aXbc" },
       current_lines = { "abYc" },
-      inner1 = {
-        {
-          original = { start_line = 1, start_col = 2, end_line = 1, end_col = 2 },
-          modified = { start_line = 1, start_col = 2, end_line = 1, end_col = 3 },
-        },
-      },
-      inner2 = {
-        {
-          original = { start_line = 1, start_col = 3, end_line = 1, end_col = 3 },
-          modified = { start_line = 1, start_col = 3, end_line = 1, end_col = 4 },
-        },
-      },
     })
     vim.api.nvim_set_current_buf(session.original_bufnr)
     vim.api.nvim_win_set_cursor(0, { 1, 0 })
 
     assert.is_true(conflict.accept_both(tabpage))
-    assert.same({ "aXbYc" }, vim.api.nvim_buf_get_lines(session.result_bufnr, 0, -1, false))
+    assert.same({ "abYc", "aXbc" }, vim.api.nvim_buf_get_lines(session.result_bufnr, 0, -1, false))
   end)
 
-  it("concatenates both sides when smart combination is unavailable", function()
+  it("takes Incoming then Current only with the explicit reverse action", function()
     configure({})
     vim.api.nvim_set_current_buf(session.original_bufnr)
     vim.api.nvim_win_set_cursor(0, { 1, 0 })
 
-    assert.is_true(conflict.accept_both(tabpage))
+    assert.is_true(conflict.accept_both_reverse(tabpage))
     assert.same({ "incoming", "current" }, vim.api.nvim_buf_get_lines(session.result_bufnr, 0, -1, false))
   end)
 

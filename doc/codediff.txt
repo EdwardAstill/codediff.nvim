@@ -1,8 +1,7 @@
 codediff.nvim                                 *codediff.txt* *codediff.nvim* *codediff*
 
 This fork provides Git review, staging, revision comparisons, history, and
-conflict resolution in Neovim. Ordinary Git review does not need OMP; sending a
-hunk to an existing OMP draft is an optional, explicit handoff.
+conflict resolution in Neovim.
 
 CONTENTS                                                   *codediff-contents*
 
@@ -12,9 +11,9 @@ CONTENTS                                                   *codediff-contents*
   Selecting a hunk           |codediff-hunks|
   Stage, unstage, revert     |codediff-staging| |codediff-revert|
   Commit, stash, lists       |codediff-repository|
-  Send a hunk to OMP         |codediff-omp|
   Safety and normal editing |codediff-safety|
   Native comparison tabs    |codediff-native|
+  Merge grid and shortcuts   |codediff-merge|
   Commands and examples     |codediff-commands| |codediff-usage|
   Configuration             |codediff-configuration|
   Signs and colors          |codediff-gutter-signs| |codediff-highlight-groups|
@@ -74,24 +73,28 @@ tab, even when the repository is clean:
   +-------------+----------------------+----------------------+
 <
 The left column is deliberately narrow; the two numbered diff panes take most
-of the width. Conflict files add a Result pane. The bottom editor statusline
-and other workspace chrome are hidden while review is active.
+of the width. Selecting a conflict uses the four-pane merge grid in
+|codediff-merge| instead. Review hides the editor statusline and mode area;
+the merge popup restores your command-line height for ordinary editing.
 
 Default initial focus is the explorer (configurable with explorer.initial_focus).
 Selecting a file in a popup tree does not jump focus into its diff. Tab cycles
-Unstaged -> Staged -> Before -> After -> Result (when present), then wraps.
+Unstaged -> Staged -> Before -> After, then wraps. In a merge the code panes
+instead cycle Incoming -> Current -> Base -> Result.
 Shift-Tab reverses the order. The tree row chooses the file; the cursor in a
 diff pane chooses the hunk. Closing a child dialog returns to its source pane.
 
 Explicit revisions, history, --staged, file/directory comparisons, and --inline
 use native tabs instead: |codediff-native|. Setting diff.layout = "inline"
-also opts out of the status popup. Popup geometry and its fixed navigation
-are not controlled by native explorer sizing/layout/keymap options.
+also opts out of the status popup. Ordinary popup geometry and navigation are
+fixed. The merge popup uses explorer.width where space permits and the merge
+keymaps in |codediff-merge|, not the ordinary review key layer.
 
 POPUP SHORTCUTS                                         *codediff-popup-keys*
 
-These are Normal-mode keys in the status workspace, not ordinary Vim editing
-commands. Editable dialogs have their own submission keys.
+These are Normal-mode keys for ordinary status review, not merge panes or
+ordinary Vim editing. Merge Result uses normal editing: |codediff-merge|.
+Editable dialogs have their own submission keys.
 
   Scope        Key                  Action
   Workspace    q / Ctrl-q           Close review, restore editor
@@ -111,11 +114,11 @@ commands. Editable dialogs have their own submission keys.
                [ / ]                Previous / next hunk
                s                    Stage/unstage cursor's hunk
                r                    Confirm working-file Revert
-               o                    Compose OMP message for selected hunk
 
 :CodeDiff help also opens shortcuts outside review; in a native session it
 shows that session's configured mappings. Native gS/g?/t and keymaps.view or
-keymaps.explorer settings do not replace this fixed popup layer.
+keymaps.explorer settings do not replace ordinary review's fixed popup layer.
+Merge panes are the exception: use g? and |codediff-merge|.
 
 HUNK SELECTION                                               *codediff-hunks*
 
@@ -126,8 +129,8 @@ Hunk -/M means no hunk is selected. On a deletion-only side, its boundary line
 is the selection point.
 
 Selection means the cursor's whole hunk, not a Visual selection or an arbitrary
-set of highlighted lines. Popup s, r, and o act on that hunk. A tree row is not
-a hunk selection. If a refresh changes the comparison, select the hunk again.
+set of highlighted lines. Popup s and r act on that hunk. A tree row is not a
+hunk selection. If a refresh changes the comparison, select the hunk again.
 
 ==============================================================================
 STAGE AND UNSTAGE                                          *codediff-staging*
@@ -144,6 +147,8 @@ on the entire repository. Inspect Staged before committing after broad actions.
 
 File/folder staging reads disk; hunk staging can use unsaved buffer text without
 writing the file. Save first if the file, preview, and index should agree.
+Merge files require explicit resolution and a saved Result before whole-file
+staging. Hunk actions do not apply to the merge grid: |codediff-merge|.
 
 REVERT WORKING-FILE HUNK                                    *codediff-revert*
 
@@ -215,47 +220,17 @@ detached/bare/locked/prunable flags. Use i/k to move; q, Esc, or Ctrl-q closes.
 Neither list switches, creates, or deletes branches/worktrees.
 
 ==============================================================================
-OPTIONAL OMP HANDOFF                                           *codediff-omp*
-
-Install EdwardAstill/omp.nvim separately and select an existing OMP session.
-CodeDiff requires its require("omp").send(text) API, which appends to that
-session's draft and reports whether the handoff was queued. OMP's session/
-bridge setup remains OMP's responsibility; it is not needed for Git review.
-
-1. Place the cursor on a hunk in a diff pane and press o. This also works in
-   native comparison tabs; o is a fixed diff-buffer binding there too.
-2. The optional-message composer starts in Insert mode. For example, type:
-   "Explain the error-handling change in this hunk."
-3. Press Ctrl-s to add the message plus captured hunk to the selected OMP
-   session's existing draft. Leave the message blank to add the hunk alone.
-4. OMP opens above the review workspace. Inspect/edit the combined draft there
-   and submit it yourself if desired. CodeDiff NEVER submits it to the model.
-   OMP's Ctrl-q returns to the originating diff pane while it still exists.
-
-The capture contains repository and file paths, before/after revisions, line
-ranges, and changed hunk text, not the entire file. It is captured before the
-composer opens; cancelling with Ctrl-q sends nothing. Existing OMP draft text
-is preserved.
-Check the selected OMP session before handing off: it can belong to another
-project, and CodeDiff does not retarget it to the reviewed repository.
-
-Missing OMP, a thrown error, or immediate rejection keeps the message and hunk
-in the composer for retry. A successful send only acknowledges queueing:
-asynchronous bridge failures are reported by OMP, not recovered by CodeDiff's
-composer. Check OMP before retrying a queued handoff to avoid duplicate text.
-
-==============================================================================
 SAFETY AND RETURN TO EDITING                                *codediff-safety*
 
 Close the status popup to restore the underlying window/view, editor chrome,
 and ordinary mappings. Switching files or closing review must not abandon
 unsaved user buffers. No review shortcut is a universal file-save key.
 
-In the author's personal configuration, Space d opens review, s saves only
-outside review, and o is word-end only outside review. These are not plugin
-defaults. In review, use |codediff-popup-keys|; in message dialogs Ctrl-s means
-Commit or Add to OMP draft, never write the source file. Save source changes in
-the ordinary editor before retrying a refused destructive action.
+In the author's personal configuration, Space d opens review and s saves only
+outside review. These are not plugin defaults. In review, use
+|codediff-popup-keys|; in the commit dialog Ctrl-s means Commit, never write the
+source file. Save source changes in the ordinary editor before retrying a
+refused destructive action.
 
 That personal configuration also suspends trailing-blank-line normalization
 for ALL CodeDiff sessions, including native tabs, and resumes it for ordinary
@@ -266,14 +241,15 @@ NATIVE COMPARISON TABS                                      *codediff-native*
 
 Revision comparisons, history, PRs, file/directory comparisons, --staged, and
 inline layouts keep native full-tab views and configured keymaps. Do not apply
-the popup movement/save/repository-action keys to them.
+popup movement/save/repository-action keys to them. Merge conflicts always use
+the fixed grid and controls in |codediff-merge|, even from an inline view.
 
 Defaults include ]c/[c for hunks, ]f/[f for files in explorer/history, g? for
 help, t for layout, and q to close the diff tab. Native explorer gS switches
 the selected file between staged/unstaged views when applicable; - toggles
 file staging. Diff buffers use <leader>hs to stage a hunk, <leader>hu to unstage,
-and <leader>hr to Revert (subject to |codediff-revert|). o remains the fixed OMP
-handoff binding. Use :CodeDiff help to see active configured keys.
+and <leader>hr to Revert (subject to |codediff-revert|). Use :CodeDiff help to
+see active configured keys.
 
 Ordinary immutable revision buffers are read-only. Working-file panes are real
 buffers; do not assume every comparison pane is immutable. Native do/dp
@@ -287,7 +263,7 @@ COMMANDS                                                  *codediff-commands*
     Open status review or a comparison. See |codediff-usage| for modes.
 
 :CodeDiff help
-    Show review shortcuts, or the active revision/history view's keymaps.
+    Show review shortcuts, or the active native/merge view's keymaps.
 
 :CodeDiff install
 :CodeDiff install!
@@ -448,20 +424,84 @@ Options:
                   its parent. Accepts any git revision (HEAD, branch name,
                   commit hash) or WORKING for the current working tree.
 
-Git merge tool:
+Merge conflicts:                                           *codediff-merge*
+>vim
+  :CodeDiff merge path/to/file
+<
+Or select an entry under Merge Changes in status. The file tree stays left;
+Incoming (:3) and Current (:2) sit above Base (:1) and Result in a fixed 2x2
+grid. The three sources are read-only. Result is the editable working file.
+Git stages determine the roles, not focus or diff.original_position. During a
+rebase, ours/theirs may differ from your usual branch perspective.
+
+For a fresh Git conflict, Result combines non-conflicting and identical changes;
+unresolved regions contain Base text with visible markers/counts. Existing
+Result edits survive file switches and reopening, so a previously edited file
+may retain conflict markers rather than being regenerated. Approvals survive
+only while its buffer remains loaded, not buffer deletion or Neovim restarts.
+
+Conflict defaults below use keymaps.conflict. Shared quit/help/file navigation
+and tree focus/visibility use keymaps.view; Tab, Shift-Tab, and CTRL-Q are fixed.
+  ]x / [x          Next / previous unresolved conflict; align every pane
+  <leader>ct / <leader>co  Take Incoming / Current
+  <leader>cb / <leader>cR  Both: Current then Incoming / Incoming then Current
+  <leader>ca       Use Base and mark resolved
+  <leader>cm       Mark a manual resolution resolved
+  <leader>cx       Reset to Base and mark unresolved
+  <leader>cT / <leader>cO  Take Incoming / Current for all unresolved conflicts
+  <leader>cB / <leader>cX  Both (Current then Incoming) for unresolved / reset all
+  u / CTRL-R      Undo / redo Result content and approvals
+  <leader>cs       Toggle linked vertical scrolling (default on)
+  <leader>cz       Maximize / restore focused pane
+Result also accepts 2do / 3do for Incoming / Current. Horizontal scrolling
+remains independent. Tab / Shift-Tab cycle panes; <leader>b / <leader>e hide /
+focus the tree. ]f / [f select the next / previous listed file; gf opens the
+focused file in the previous tab. Use g? or :CodeDiff help for shortcuts and
+q / CTRL-Q to close.
+
+Result uses ordinary Neovim editing even inside the popup: i inserts, h/j/k/l
+move normally, and s is not staging. Popup trees retain their fixed controls,
+including s to stage and h for help. Manual edits do not resolve conflicts:
+use Mark Resolved. Editing an approved block invalidates approval. Use Base
+resolves; Reset does not. Per-block choices can replace an earlier choice;
+Take All skips approved blocks. Reset All resets every block while keeping
+automatic non-conflicting edits. Both retains complete alternatives in order.
+
+Write Result with :write, then stage the whole file with - (or s in a popup
+tree). CodeDiff refuses file/folder/all staging for affected unopened,
+unresolved, unsaved, or stale-input conflicts. Hunk operations cannot bypass
+this guard. External git add does bypass it. Finish the Git operation yourself.
+Tree rows show unresolved counts or "needs review" for unknown/stale inputs.
+Close offers Discard, Cancel, or Keep changes and close for unsaved Results.
+Discard reloads the last disk contents, not the pre-merge file; Keep retains
+buffers and undo history. If preserved edits make a range ambiguous, automatic
+replacement is refused: edit Result manually and Mark Resolved.
+Binary/delete/unsupported rename, symlink/submodule, and differing file-mode
+conflicts must be handled outside CodeDiff. Text add/add uses an empty Base.
+
+Git merge tool (POSIX-shell quoting):
 >sh
   git config --global merge.tool codediff
-  git config --global mergetool.codediff.cmd 'nvim "$MERGED" -c "CodeDiff merge \"$MERGED\""'
+  git config --global mergetool.codediff.cmd 'nvim "$MERGED" -c "CodeDiff --exit-on-close merge \"$MERGED\""'
 <
+With --exit-on-close, resolve and :write, then use CodeDiff's q / CTRL-Q.
+Its close action checks unresolved/unsaved, changed-input, and changed-on-disk
+state. :cquit aborts with a failing status; direct/forced Neovim quits bypass
+CodeDiff's checks. Git may ask you to confirm success and stages successful
+resolutions itself. CodeDiff does not commit or continue a merge automatically.
+
+The old diff.conflict_ours_position and diff.conflict_result_* layout settings
+are removed; role meanings no longer depend on positions.
 
 ==============================================================================
 CONFIGURATION                                        *codediff-configuration*
 
-The configuration below is a reference for native layouts and rendering.
-The popup has fixed pane geometry and the key layer in |codediff-popup-keys|;
-native explorer.position/width/height and keymaps settings do not remap that
-layer. Rendering options still apply where supported. In particular,
-diff.layout = "inline" selects native tabs, not an inline popup.
+The configuration below covers native layouts, merge actions, and rendering.
+Ordinary status review has fixed pane geometry and |codediff-popup-keys|; native
+explorer sizing/keymaps do not remap that layer. The merge popup respects
+explorer.width where space permits, with |codediff-merge| controls. Rendering
+options still apply where supported. diff.layout = "inline" selects native
+status tabs, but conflicts always use the fixed merge grid.
 
                                                       *codediff-layout*
 Diff layout~
@@ -478,6 +518,7 @@ Set the layout in your config:
     diff = { layout = "inline" },
   })
 <
+Merge roles are fixed; diff.original_position does not swap them.
 
                                                       *codediff-filler-text*
 Filler appearance~
@@ -524,9 +565,10 @@ or switching windows restores normal scrollbind.
 
 TOGGLING LAYOUT                                   *codediff-toggle-layout*
 
-Press t in a native diff tab to toggle side-by-side and inline layout.
-The current file is re-rendered automatically in native explorer, history,
-and standalone views. This toggle is not installed in the fixed status popup.
+Press t in an ordinary native diff tab to toggle side-by-side and inline layout.
+The current file is re-rendered in explorer, history, and standalone views.
+Layout toggling, compact mode, and move alignment are unavailable in merge
+grids; t is also not installed in ordinary status popups.
 
 The toggle keymap can be customized:
 >lua
@@ -559,9 +601,6 @@ Setup reference (selected defaults; omitted options retain their defaults):
       disable_inlay_hints = true,
       max_computation_time_ms = 5000,
       hide_merge_artifacts = false,
-      conflict_result_position = "bottom",
-      conflict_result_height = 30,
-      conflict_result_width_ratio = { 1, 1, 1 },
       jump_to_first_change = true,
       highlight_added_deleted_files = false,
       highlight_priority = 100,
@@ -667,9 +706,18 @@ Setup reference (selected defaults; omitted options retain their defaults):
         accept_incoming = "<leader>ct",
         accept_current = "<leader>co",
         accept_both = "<leader>cb",
+        accept_both_reverse = "<leader>cR",
+        accept_base = "<leader>ca",
+        mark_resolved = "<leader>cm",
         discard = "<leader>cx",
+        accept_all_incoming = "<leader>cT",
+        accept_all_current = "<leader>cO",
+        accept_all_both = "<leader>cB",
+        discard_all = "<leader>cX",
         next_conflict = "]x",
         prev_conflict = "[x",
+        toggle_scroll_sync = "<leader>cs",
+        toggle_maximize = "<leader>cz",
         diffget_incoming = "2do",
         diffget_current = "3do",
       },
@@ -728,6 +776,8 @@ selected file rows retain their selection background.
 File contexts contain `path`, `filename`, `directory`, `old_path`, `group`,
 `stats`, `status`, `status_hl`, `status_right_margin`, `indent`, `indent_hl`,
 `icon`, and `icon_hl`.
+Conflict rows also expose `conflict = { reviewed, unresolved_count }`; the count
+is nil until the current inputs have been reviewed, not an implicit zero.
 
 Folder contexts contain `name`, `path`, `group`, `file_count`, `stats`, `files`,
 `indent`, `indent_hl`, `icon`, `icon_hl`, and `expanded`. Group contexts contain
@@ -904,7 +954,6 @@ Advanced modules (internal, not a stable public API):
   local render = require("codediff.ui")
   local git = require("codediff.core.git")
 <
-Optional OMP integration uses OMP's public send(text) API; see |codediff-omp|.
 
 ==============================================================================
 USER AUTOCMD EVENTS                                     *codediff-events*
@@ -958,14 +1007,17 @@ MIGRATION                                                *codediff-migration*
   such as revert_hunk = "r" affects native tabs; popup r is fixed.
 - Merge keymaps.conflict.discard/discard_all and conflict highlight names are
   separate settings; do not rename them as part of the hunk-key migration.
-- Native gS/g?/t and explorer mappings do not govern the status popup.
-  Use |codediff-popup-keys| rather than an old full-tab shortcut guide.
-- Remove any expectation that global s/Ctrl-s always saves. s stages/unstages
-  in the popup; workspace Ctrl-s opens help; message Ctrl-s submits the dialog
-  action. Normal editing behavior returns outside the session.
-- Blanket "without agent integrations" descriptions are obsolete: ordinary
-  review remains independent of OMP, but o optionally hands a hunk to a draft.
-  No model request is automatically submitted.
+- Native gS/g?/t and explorer mappings do not govern ordinary status review.
+  Use |codediff-popup-keys| rather than an old full-tab shortcut guide. Merge
+  panes instead use ordinary editing and the controls in |codediff-merge|.
+- Remove diff.conflict_ours_position, diff.conflict_result_position,
+  diff.conflict_result_height, and diff.conflict_result_width_ratio. Merge
+  roles/layout are fixed; Both has an explicit order, Use Base resolves, and
+  Reset deliberately leaves the block unresolved.
+- The old draft-handoff integration and its o mapping are removed.
+- Do not expect global s/Ctrl-s to save. s stages/unstages in ordinary review
+  and popup trees, but edits normally in merge Result. Workspace Ctrl-s opens
+  review help; message Ctrl-s submits the dialog. Use :write in merge Result.
 - Neovim 0.7 is not a valid runtime requirement for this fork's current popup,
   repository actions, and Revert implementation; see |codediff-requirements|.
 

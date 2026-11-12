@@ -40,7 +40,7 @@ describe("conflicted file in an inline tab", function()
     end
   end)
 
-  it("opens the three-pane merge view, not a single pane", function()
+  it("opens the four-pane merge grid, not a single pane", function()
     local lifecycle = require("codediff.ui.lifecycle")
 
     vim.cmd("edit " .. repo.path("ordinary.txt"))
@@ -57,12 +57,8 @@ describe("conflicted file in an inline tab", function()
     assert.equals("inline", lifecycle.get_session(tabpage).layout, "tab should start out inline")
 
     -- Select through the session controller from a settled inline comparison.
-    -- conflict_ours_position defaults to putting OURS on the right.
-    local ours_position = require("codediff.config").options.diff.conflict_ours_position or "right"
-    local left_rev = ours_position == "right" and ":3" or ":2"
-    local right_rev = ours_position == "right" and ":2" or ":3"
-    local left_text = ours_position == "right" and "FEATURE1" or "MAIN1"
-    local right_text = ours_position == "right" and "MAIN1" or "FEATURE1"
+    local left_rev, right_rev = ":3", ":2"
+    local left_text, right_text = "FEATURE1", "MAIN1"
 
     require("codediff.ui.refresh").select(tabpage, {
       path = "conf.txt",
@@ -94,12 +90,13 @@ describe("conflicted file in an inline tab", function()
     assert.equals(right_rev, session.modified_revision)
 
     -- Both sides need their own window, or one overwrites the other.
-    assert.is_not_nil(session.original_win, "OURS needs a window")
-    assert.is_not_nil(session.modified_win, "THEIRS needs a window")
+    assert.is_not_nil(session.original_win, "Incoming needs a window")
+    assert.is_not_nil(session.modified_win, "Current needs a window")
     assert.not_equal(session.original_win, session.modified_win, "the two sides must not share a window")
-    for _, win in ipairs({ session.original_win, session.modified_win, session.result_win }) do
-      assert.is_true(vim.wo[win].scrollbind, "all conflict panes should use native scrollbind")
-    end
+    assert.is_not_nil(session.base_win, "Base needs a window")
+    assert.not_equal(session.base_win, session.result_win, "Base must not overwrite editable Result")
+    assert.same({ "base1", "base2", "base3" }, vim.api.nvim_buf_get_lines(session.base_bufnr, 0, -1, false))
+    assert.same({ "base1", "base2", "base3" }, vim.api.nvim_buf_get_lines(session.result_bufnr, 0, -1, false))
 
     local ours = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(session.original_win), 0, -1, false)
     local theirs = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(session.modified_win), 0, -1, false)

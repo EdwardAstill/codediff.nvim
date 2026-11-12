@@ -32,8 +32,9 @@ function M.toggle_stage(ctx)
     end
   end
 
-  -- Case 2: Cursor in diff buffers (original or modified)
-  if current_buf == ctx.original_bufnr or current_buf == ctx.modified_bufnr then
+  -- Every merge pane stages the same saved Result, never an input snapshot.
+  if current_buf == ctx.original_bufnr or current_buf == ctx.modified_bufnr
+    or current_buf == session.base_bufnr or current_buf == session.result_bufnr then
     local file_path = explorer.data.current_file_path
     local group = explorer.data.current_file_group
 

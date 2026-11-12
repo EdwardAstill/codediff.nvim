@@ -88,8 +88,14 @@ local function open_diff_panes(session_config)
   local original_is_virtual = is_virtual_revision(session_config.original_revision)
   local modified_is_virtual = is_virtual_revision(session_config.modified_revision)
 
-  local original_info = prepare_buffer(original_is_virtual, session_config.git_root, session_config.original_revision, session_config.original)
-  local modified_info = prepare_buffer(modified_is_virtual, session_config.git_root, session_config.modified_revision, session_config.modified)
+  local original_info, modified_info
+  if session_config.conflict then
+    local inputs = require("codediff.ui.conflict.view.inputs")
+    original_info, modified_info = inputs.prepare_snapshot(session_config, "original"), inputs.prepare_snapshot(session_config, "modified")
+  else
+    original_info = prepare_buffer(original_is_virtual, session_config.git_root, session_config.original_revision, session_config.original)
+    modified_info = prepare_buffer(modified_is_virtual, session_config.git_root, session_config.modified_revision, session_config.modified)
+  end
 
   local original_win, modified_win
   if session_config.popup then
@@ -181,23 +187,22 @@ local function finish_create(tabpage, session_config, original_win, modified_win
   }
 end
 
---- Render a 3-way merge: fetch the merge base, diff both sides against it,
---- then register the session and open the result pane.
+--- Render immutable merge inputs and register the four-pane session before its tree.
 --- @param ctx table { tabpage, session_config, wins, infos, lines, on_ready }
 local function render_conflict_view(ctx)
-  local git = require("codediff.core.git")
   local session_config = ctx.session_config
   local tabpage = ctx.tabpage
   local original_win, modified_win = ctx.original_win, ctx.modified_win
   local original_info, modified_info = ctx.original_info, ctx.modified_info
 
-  git.get_file_content(":1", session_config.git_root, session_config.original.relative, function(err, base_lines)
-    -- Add/add conflicts (AA) have no base version; treat it as empty.
-    if err then
-      base_lines = {}
-    end
-
-    vim.schedule(function()
+  local inputs = session_config.merge_inputs
+  if not inputs then
+    vim.notify("Cannot open merge without validated index snapshots", vim.log.levels.ERROR)
+    return
+  end
+  local base_lines = inputs.base_lines
+  ctx.original_lines, ctx.modified_lines = inputs.incoming_lines, inputs.current_lines
+  vim.schedule(function()
       local conflict_diffs = compute_and_render_conflict(
         original_info.bufnr,
         modified_info.bufnr,
@@ -221,17 +226,20 @@ local function render_conflict_view(ctx)
         reapply_keymaps = make_reapply_keymaps(tabpage, { conflict = true }),
       })
 
-      local success = setup_conflict_result_window(tabpage, session_config, original_win, modified_win, base_lines, conflict_diffs, false)
-      if success then
-        setup_all_keymaps(tabpage, original_info.bufnr, modified_info.bufnr, false)
-        -- After setup_all_keymaps, so the conflict mappings win.
-        require("codediff.ui.conflict").setup_keymaps(tabpage)
+
+      local success, err = setup_conflict_result_window(tabpage, session_config, original_win, modified_win, base_lines, conflict_diffs)
+      if not success then
+        if ctx.on_ready then ctx.on_ready(nil, err or "Cannot initialize merge Result") end
+        return
       end
+      finish_create(tabpage, session_config, original_win, modified_win, original_info, modified_info)
+      setup_all_keymaps(tabpage, original_info.bufnr, modified_info.bufnr, session_config.panel ~= nil)
+      -- After setup_all_keymaps, so the conflict mappings win.
+      require("codediff.ui.conflict").setup_keymaps(tabpage)
 
       if ctx.on_ready then
         ctx.on_ready()
       end
-    end)
   end)
 end
 
@@ -284,10 +292,10 @@ end
 --- @param render function
 local function render_when_loaded(tabpage, original_info, modified_info, original_is_virtual, modified_is_virtual, render)
   local awaited = {}
-  if original_is_virtual then
+  if original_is_virtual and not original_info.snapshot then
     awaited[#awaited + 1] = "original"
   end
-  if modified_is_virtual then
+  if modified_is_virtual and not modified_info.snapshot then
     awaited[#awaited + 1] = "modified"
   end
   if #awaited == 0 then
@@ -417,7 +425,9 @@ function M.create(session_config, filetype, on_ready)
     render_when_loaded(tabpage, original_info, modified_info, original_is_virtual, modified_is_virtual, render)
   end
 
-  return finish_create(tabpage, session_config, original_win, modified_win, original_info, modified_info)
+  if not session_config.conflict then
+    return finish_create(tabpage, session_config, original_win, modified_win, original_info, modified_info)
+  end
 end
 
 return M

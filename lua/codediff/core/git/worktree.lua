@@ -2,6 +2,7 @@
 local M = {}
 
 local run_git_async = require("codediff.core.git.runner").run_async
+local conflicts = require("codediff.core.git.conflicts")
 
 -- Apply a unified diff patch to the git index (async)
 -- Used for hunk-level staging: generates a patch for a single hunk and applies it
@@ -21,12 +22,7 @@ local run_git_async = require("codediff.core.git.runner").run_async
 --   cached: boolean - apply to index (default: true)
 --   reverse: boolean - reverse-apply the patch (default: false)
 -- callback: function(err) - nil err on success
-function M.apply_patch(git_root, patch, opts, callback)
-  -- Support old signature: apply_patch(git_root, patch, reverse, callback)
-  if type(opts) == "boolean" then
-    opts = { cached = true, reverse = opts }
-  end
-  opts = opts or {}
+local function apply_patch(git_root, patch, opts, callback)
   if opts.cached == nil then
     opts.cached = true
   end
@@ -109,18 +105,41 @@ function M.apply_patch(git_root, patch, opts, callback)
   end
 end
 
+function M.apply_patch(git_root, patch, opts, callback)
+  if type(opts) == "boolean" then
+    opts = { cached = true, reverse = opts }
+  end
+  opts = opts or {}
+  conflicts.before_mutation(git_root, opts.paths, false, function(err)
+    if err then
+      callback(err)
+      return
+    end
+    if opts.validate then
+      local validation_err = opts.validate()
+      if validation_err then
+        callback(validation_err)
+        return
+      end
+    end
+    apply_patch(git_root, patch, opts, callback)
+  end)
+end
+
 -- Stage a file (git add)
 -- git_root: absolute path to git repository root
 -- rel_path: relative path or list of paths from git root
 -- callback: function(err)
 function M.stage_file(git_root, rel_path, callback)
   local args = vim.list_extend({ "--literal-pathspecs", "add", "-A", "--" }, type(rel_path) == "table" and rel_path or { rel_path })
-  run_git_async(args, { cwd = git_root }, function(err, _)
-    if err then
-      callback("Failed to stage file: " .. err)
-    else
-      callback(nil)
+  conflicts.before_mutation(git_root, rel_path, true, function(preflight_err)
+    if preflight_err then
+      callback(preflight_err)
+      return
     end
+    run_git_async(args, { cwd = git_root }, function(err)
+      callback(err and ("Failed to stage file: " .. err) or nil)
+    end)
   end)
 end
 
@@ -130,12 +149,14 @@ end
 -- callback: function(err)
 function M.unstage_file(git_root, rel_path, callback)
   local args = vim.list_extend({ "--literal-pathspecs", "reset", "--" }, type(rel_path) == "table" and rel_path or { rel_path })
-  run_git_async(args, { cwd = git_root }, function(err, _)
-    if err then
-      callback("Failed to unstage file: " .. err)
-    else
-      callback(nil)
+  conflicts.before_mutation(git_root, rel_path, false, function(preflight_err)
+    if preflight_err then
+      callback(preflight_err)
+      return
     end
+    run_git_async(args, { cwd = git_root }, function(err)
+      callback(err and ("Failed to unstage file: " .. err) or nil)
+    end)
   end)
 end
 
@@ -143,12 +164,14 @@ end
 -- git_root: absolute path to git repository root
 -- callback: function(err)
 function M.stage_all(git_root, callback)
-  run_git_async({ "add", "-A" }, { cwd = git_root }, function(err, _)
-    if err then
-      callback("Failed to stage all files: " .. err)
-    else
-      callback(nil)
+  conflicts.before_mutation(git_root, nil, true, function(preflight_err)
+    if preflight_err then
+      callback(preflight_err)
+      return
     end
+    run_git_async({ "add", "-A" }, { cwd = git_root }, function(err)
+      callback(err and ("Failed to stage all files: " .. err) or nil)
+    end)
   end)
 end
 
@@ -156,12 +179,14 @@ end
 -- git_root: absolute path to git repository root
 -- callback: function(err)
 function M.unstage_all(git_root, callback)
-  run_git_async({ "reset" }, { cwd = git_root }, function(err, _)
-    if err then
-      callback("Failed to unstage all files: " .. err)
-    else
-      callback(nil)
+  conflicts.before_mutation(git_root, nil, false, function(preflight_err)
+    if preflight_err then
+      callback(preflight_err)
+      return
     end
+    run_git_async({ "reset" }, { cwd = git_root }, function(err)
+      callback(err and ("Failed to unstage all files: " .. err) or nil)
+    end)
   end)
 end
 

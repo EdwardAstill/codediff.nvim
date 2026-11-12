@@ -236,7 +236,7 @@ describe('Issue #353 regression - end-to-end with a real git merge', function()
     -- Reproduce the conflict view's seed computation.
     local diff_opts = { max_computation_time_ms = 2000 }
     -- Stage layout matches the conflict view: original=:3 (incoming/theirs),
-    -- modified=:2 (current/ours) in the default conflict_ours_position="right".
+    -- modified=:2 (current/ours); merge roles are fixed.
     local base_to_original = diff_module.compute_diff(base_lines, theirs_lines, diff_opts)
     local base_to_modified = diff_module.compute_diff(base_lines, ours_lines, diff_opts)
     local merged, conflict_blocks = merge_alignment.compute_auto_merged_result(

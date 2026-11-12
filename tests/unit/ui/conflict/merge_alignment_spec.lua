@@ -28,56 +28,6 @@ describe("Merge Alignment", function()
     assert.equal(0, #right_fillers)
   end)
 
-  -- Test 2: Single overlapping change produces fillers
-  it("Single overlapping change produces fillers", function()
-    -- Base lines 2-4, input1 expands to 2-6 (4 lines), input2 expands to 2-5 (3 lines)
-    local diff1 = make_diff({ make_change(2, 4, 2, 6) })
-    local diff2 = make_diff({ make_change(2, 4, 2, 5) })
-
-    local left_fillers, right_fillers = merge_alignment.compute_merge_fillers(diff1, diff2, {"a", "b", "c", "d"}, {"a", "b", "c", "d", "e", "f"}, {"a", "b", "c", "d", "e"})
-
-    -- Right side has fewer lines, so it should get a filler
-    assert.is_true(#right_fillers > 0 or #left_fillers > 0)
-  end)
-
-  -- Test 3: Non-overlapping changes
-  it("Non-overlapping changes produce separate regions", function()
-    local diff1 = make_diff({ make_change(2, 4, 2, 5) })
-    local diff2 = make_diff({ make_change(10, 12, 10, 14) })
-
-    local base_lines = {}
-    for i = 1, 20 do base_lines[i] = "line" .. i end
-    local input1_lines = {}
-    for i = 1, 21 do input1_lines[i] = "line" .. i end
-    local input2_lines = {}
-    for i = 1, 22 do input2_lines[i] = "line" .. i end
-
-    local left_fillers, right_fillers = merge_alignment.compute_merge_fillers(diff1, diff2, base_lines, input1_lines, input2_lines)
-
-    -- Should produce fillers for both regions
-    assert.is_table(left_fillers)
-    assert.is_table(right_fillers)
-  end)
-
-  -- Test 4: compute_merge_fillers_and_conflicts returns conflict info
-  it("compute_merge_fillers_and_conflicts returns conflict changes", function()
-    -- Both sides modify the same region - this is a conflict
-    local diff1 = make_diff({ make_change(2, 4, 2, 6) })
-    local diff2 = make_diff({ make_change(2, 4, 2, 5) })
-
-    local fillers, conflict_left, conflict_right = merge_alignment.compute_merge_fillers_and_conflicts(
-      diff1, diff2,
-      {"a", "b", "c", "d"},
-      {"a", "b", "c", "d", "e", "f"},
-      {"a", "b", "c", "d", "e"}
-    )
-
-    assert.is_table(fillers)
-    assert.is_table(fillers.left_fillers)
-    assert.is_table(fillers.right_fillers)
-    assert.is_table(conflict_left)
-    assert.is_table(conflict_right)
-  end)
 
   -- Test 5: Only one side has changes (no conflict)
   it("Only one side has changes produces no conflicts", function()
@@ -164,6 +114,28 @@ describe("Merge Alignment", function()
 
     assert.is_table(left_fillers)
     assert.is_table(right_fillers)
+  end)
+
+  it("aligns Base and Result at BOF and EOF, including manual Result expansion", function()
+    local grid = require("codediff.ui.conflict.merge.fillers").compute_grid_fillers(
+      make_diff({ make_change(1, 1, 1, 3) }),
+      make_diff({ make_change(4, 4, 4, 5) }),
+      make_diff({ make_change(4, 4, 4, 7) })
+    )
+    assert.same({ { after_line = 5, count = 3 } }, grid[1])
+    assert.same({ { after_line = 0, count = 2 }, { after_line = 4, count = 2 } }, grid[2])
+    assert.same({ { after_line = 0, count = 2 }, { after_line = 3, count = 3 } }, grid[3])
+    assert.same({ { after_line = 0, count = 2 } }, grid[4])
+  end)
+
+  it("pads deletions and an empty ancestor without negative anchors", function()
+    local fillers = require("codediff.ui.conflict.merge.fillers")
+    local grid = fillers.compute_grid_fillers(make_diff({ make_change(1, 3, 1, 1) }), make_diff({}), make_diff({}))
+    assert.same({ { after_line = 0, count = 2 } }, grid[1])
+    assert.same({}, grid[3])
+    grid = fillers.compute_grid_fillers(make_diff({ make_change(1, 1, 1, 2) }), make_diff({ make_change(1, 1, 1, 3) }), make_diff({}))
+    assert.same({ { after_line = 0, count = 2 } }, grid[3])
+    assert.same(grid[3], grid[4])
   end)
 end)
 

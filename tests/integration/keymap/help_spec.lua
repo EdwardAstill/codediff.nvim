@@ -101,6 +101,7 @@ local function bound_keys(tabpage)
     session.modified_bufnr,
     (session.panel or {}).view and (session.panel or {}).view.bufnr,
     session.result_bufnr,
+    session.base_bufnr,
   }
 
   local keys = {}

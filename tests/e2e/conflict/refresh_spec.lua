@@ -120,7 +120,7 @@ for _, backend in ipairs({ "native", "polling" }) do
       if backend == "native" then
         h.wait_event(screen, before)
       end
-      screen:command("tabclose!")
+      screen:command("tabnew | tabprevious | tabclose!")
       repo.write_file("background.txt", { "after-close" })
       vim.wait(700)
       h.assert_no_errors(screen)
@@ -144,7 +144,7 @@ for _, backend in ipairs({ "native", "polling" }) do
     end)
 
     for _, shape in ipairs({ "add/add", "deleted by us", "deleted by them" }) do
-      it("settles and refreshes " .. shape .. " conflicts", function()
+      it("preserves work or rejects unsupported " .. shape .. " conflicts safely", function()
         repo = h.repo()
         if shape == "add/add" then
           repo.git("rm a.txt")
@@ -169,6 +169,18 @@ for _, backend in ipairs({ "native", "polling" }) do
         local _, code = repo.git("merge incoming --no-edit", 1)
         assert.equals(1, code)
         screen = h.screen(backend, "side-by-side")
+        if shape ~= "add/add" then
+          local before_file = repo.read_file("a.txt")
+          local before_index = repo.command({ "ls-files", "--stage", "--", "a.txt" })
+          screen:exec([[
+            local root = ...
+            vim.cmd("CodeDiff merge " .. vim.fn.fnameescape(root .. "/a.txt"))
+          ]], { repo.dir })
+          assert.is_nil(screen:exec("return refresh_session()"))
+          assert.same(before_file, repo.read_file("a.txt"))
+          assert.equals(before_index, repo.command({ "ls-files", "--stage", "--", "a.txt" }))
+          return
+        end
         h.open(screen, repo)
         local side = shape == "deleted by us" and "original" or "modified"
         screen:exec("vim.api.nvim_set_current_win(refresh_session()[(...) .. '_win'])", { side })

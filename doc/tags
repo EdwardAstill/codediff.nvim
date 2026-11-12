@@ -17,10 +17,10 @@ codediff-history-line-range	codediff.txt	/*codediff-history-line-range*
 codediff-hunks	codediff.txt	/*codediff-hunks*
 codediff-layout	codediff.txt	/*codediff-layout*
 codediff-lua-api	codediff.txt	/*codediff-lua-api*
+codediff-merge	codediff.txt	/*codediff-merge*
 codediff-migration	codediff.txt	/*codediff-migration*
 codediff-moved-code	codediff.txt	/*codediff-moved-code*
 codediff-native	codediff.txt	/*codediff-native*
-codediff-omp	codediff.txt	/*codediff-omp*
 codediff-pathspec	codediff.txt	/*codediff-pathspec*
 codediff-popup	codediff.txt	/*codediff-popup*
 codediff-popup-keys	codediff.txt	/*codediff-popup-keys*

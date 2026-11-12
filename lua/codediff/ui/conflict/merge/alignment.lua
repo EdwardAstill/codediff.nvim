@@ -230,110 +230,52 @@ function M.get_alignments(base_start, base_end, input1_start, input1_end, input2
   return filtered
 end
 
--- Exact port of VSCode's MappingAlignment.compute
--- Takes changes from base->input1 and base->input2, returns aligned groups
-function M.compute_mapping_alignments(changes1, changes2)
-  -- Combine and sort all changes by base start line
-  local combined = {}
-  for _, c in ipairs(changes1 or {}) do
-    table.insert(combined, { source = 1, diff = c })
+-- Group overlapping base changes across the inputs and, optionally, Result.
+function M.compute_mapping_alignments(changes1, changes2, changes3)
+  local sources = { changes1 or {}, changes2 or {} }
+  if changes3 then
+    sources[3] = changes3
   end
-  for _, c in ipairs(changes2 or {}) do
-    table.insert(combined, { source = 2, diff = c })
+  local combined, current_diffs, delta_from_base = {}, {}, {}
+  for source, changes in ipairs(sources) do
+    current_diffs[source], delta_from_base[source] = {}, 0
+    for _, change in ipairs(changes) do
+      combined[#combined + 1] = { source = source, diff = change }
+    end
   end
   table.sort(combined, function(a, b)
+    if a.diff.original.start_line == b.diff.original.start_line then
+      return a.diff.original.end_line < b.diff.original.end_line
+    end
     return a.diff.original.start_line < b.diff.original.start_line
   end)
-
-  local current_diffs = { {}, {} } -- [1] = changes1, [2] = changes2
-  local delta_from_base = { 0, 0 } -- accumulated line delta for each input
   local alignments = {}
-
-  local current_base_range = nil -- { start_line, end_line }
-
+  local current_base_range
   local function push_and_reset()
     if not current_base_range then
       return
     end
-
-    -- Calculate output ranges for each input using VSCode's extendInputRange approach
-    -- This ensures we cover the full base range even if the actual diffs only cover part of it
-
-    local output1_start, output1_end
-    local output2_start, output2_end
-
-    if #current_diffs[1] > 0 then
-      -- Join all changes for input1, then extend to cover full base range
-      local first = current_diffs[1][1]
-      local last = current_diffs[1][#current_diffs[1]]
-
-      -- Calculate the joined mapping's input/output ranges
-      local joined_input_start = first.original.start_line
-      local joined_input_end = last.original.end_line
-      local joined_output_start = first.modified.start_line
-      local joined_output_end = last.modified.end_line
-
-      -- Extend to cover current_base_range (VSCode's extendInputRange)
-      local start_delta = current_base_range.start_line - joined_input_start
-      local end_delta = current_base_range.end_line - joined_input_end
-
-      output1_start = joined_output_start + start_delta
-      output1_end = joined_output_end + end_delta
-    else
-      -- No changes for input1, use base range with delta
-      output1_start = current_base_range.start_line + delta_from_base[1]
-      output1_end = current_base_range.end_line + delta_from_base[1]
-    end
-
-    if #current_diffs[2] > 0 then
-      -- Join all changes for input2, then extend to cover full base range
-      local first = current_diffs[2][1]
-      local last = current_diffs[2][#current_diffs[2]]
-
-      local joined_input_start = first.original.start_line
-      local joined_input_end = last.original.end_line
-      local joined_output_start = first.modified.start_line
-      local joined_output_end = last.modified.end_line
-
-      -- Extend to cover current_base_range
-      local start_delta = current_base_range.start_line - joined_input_start
-      local end_delta = current_base_range.end_line - joined_input_end
-
-      output2_start = joined_output_start + start_delta
-      output2_end = joined_output_end + end_delta
-    else
-      output2_start = current_base_range.start_line + delta_from_base[2]
-      output2_end = current_base_range.end_line + delta_from_base[2]
-    end
-
-    -- Collect inner diffs
-    local inner1, inner2 = {}, {}
-    for _, c in ipairs(current_diffs[1]) do
-      for _, inner in ipairs(c.inner_changes or {}) do
-        table.insert(inner1, inner)
+    local group = { base_range = current_base_range }
+    for source, changes in ipairs(current_diffs) do
+      local first, last = changes[1], changes[#changes]
+      local start_line = current_base_range.start_line + delta_from_base[source]
+      local end_line = current_base_range.end_line + delta_from_base[source]
+      if first then
+        start_line = first.modified.start_line + current_base_range.start_line - first.original.start_line
+        end_line = last.modified.end_line + current_base_range.end_line - last.original.end_line
       end
-    end
-    for _, c in ipairs(current_diffs[2]) do
-      for _, inner in ipairs(c.inner_changes or {}) do
-        table.insert(inner2, inner)
+      group["output" .. source .. "_range"] = { start_line = start_line, end_line = end_line }
+      local inner = {}
+      for _, change in ipairs(changes) do
+        for _, mapping in ipairs(change.inner_changes or {}) do
+          inner[#inner + 1] = mapping
+        end
       end
+      group["inner" .. source] = inner
+      group["has_input" .. source] = first ~= nil
+      current_diffs[source] = {}
     end
-
-    table.insert(alignments, {
-      base_range = current_base_range,
-      output1_range = { start_line = output1_start, end_line = output1_end },
-      output2_range = { start_line = output2_start, end_line = output2_end },
-      inner1 = inner1,
-      inner2 = inner2,
-      -- True iff this side actually contributed at least one diff to this group.
-      -- Used by compute_auto_merged_result to distinguish one-sided changes from
-      -- conflicts. The size/inner_changes heuristic elsewhere can miss same-size
-      -- replacements with no inner diffs, so we record this directly here.
-      has_input1 = #current_diffs[1] > 0,
-      has_input2 = #current_diffs[2] > 0,
-    })
-
-    current_diffs = { {}, {} }
+    alignments[#alignments + 1] = group
   end
 
   for _, item in ipairs(combined) do

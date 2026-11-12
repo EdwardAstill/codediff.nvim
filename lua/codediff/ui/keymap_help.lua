@@ -61,8 +61,9 @@ local function build_sections(keymaps, is_bound, shape)
     sections,
     section("VIEW", {
       { km.quit, "Close diff workspace" },
-      { "<Tab>", "Focus next popup pane" },
-      { "<S-Tab>", "Focus previous popup pane" },
+      { "<C-q>", "Close merge workspace" },
+      { "<Tab>", "Focus next pane" },
+      { "<S-Tab>", "Focus previous pane" },
       { km.next_hunk, "Next hunk" },
       { km.prev_hunk, "Previous hunk" },
       { km.diff_get, "Get change from other buffer" },
@@ -77,7 +78,6 @@ local function build_sections(keymaps, is_bound, shape)
       { km.stage_hunk, "Stage hunk under cursor" },
       { km.unstage_hunk, "Unstage hunk under cursor" },
       { km.revert_hunk, "Revert hunk to comparison baseline" },
-      { "o", "Send hunk to OMP draft" },
       { km.toggle_layout, "Toggle inline/side-by-side layout" },
       { km.align_move, "Align moved code block" },
       { km.toggle_compact, "Toggle compact mode (fold unchanged)" },
@@ -86,7 +86,17 @@ local function build_sections(keymaps, is_bound, shape)
     }, is_bound)
   )
 
-  if shape.explorer then
+  if shape.popup then
+    table.insert(sections, section("CHANGE TREES", {
+      { { "i", "k", "<Up>", "<Down>" }, "Move up / down" },
+      { { "<CR>", MOUSE_SELECT }, "Select file / toggle folder" },
+      { { "j", "l" }, "Collapse / expand folder or select file" },
+      { "s", "Stage / unstage selected file or folder" },
+      { "S", "Stage all files" },
+      { "U", "Unstage all files" },
+      { { "h", "<C-s>", "<C-S-s>" }, "Merge help (tree only)" },
+    }, is_bound))
+  elseif shape.explorer then
     local ekm = keymaps.explorer
     table.insert(
       sections,
@@ -142,19 +152,26 @@ local function build_sections(keymaps, is_bound, shape)
     local ckm = keymaps.conflict
     table.insert(
       sections,
+      1,
       section("CONFLICT", {
-        { ckm.accept_incoming, "Accept incoming (theirs)" },
-        { ckm.accept_current, "Accept current (ours)" },
-        { ckm.accept_both, "Accept both changes" },
-        { ckm.discard, "Discard both (keep base)" },
-        { ckm.accept_all_incoming, "Accept ALL incoming" },
-        { ckm.accept_all_current, "Accept ALL current" },
-        { ckm.accept_all_both, "Accept ALL both" },
-        { ckm.discard_all, "Discard ALL (reset to base)" },
-        { ckm.next_conflict, "Next conflict" },
-        { ckm.prev_conflict, "Previous conflict" },
-        { ckm.diffget_incoming, "Get hunk from incoming" },
-        { ckm.diffget_current, "Get hunk from current" },
+        { ckm.accept_incoming, "Take Incoming" },
+        { ckm.accept_current, "Take Current" },
+        { ckm.accept_both, "Take Both: Current then Incoming" },
+        { ckm.accept_both_reverse, "Take Both: Incoming then Current" },
+        { ckm.accept_base, "Use Base (resolved)" },
+        { ckm.mark_resolved, "Mark manual edit resolved" },
+        { ckm.discard, "Reset conflict (unresolved)" },
+        { ckm.accept_all_incoming, "Take Incoming for all conflicts" },
+        { ckm.accept_all_current, "Take Current for all conflicts" },
+        { ckm.accept_all_both, "Take Both for all: Current then Incoming" },
+        { ckm.discard_all, "Reset all conflicts (unresolved)" },
+        { ckm.next_conflict, "Next unresolved conflict" },
+        { ckm.prev_conflict, "Previous unresolved conflict" },
+        { ckm.diffget_incoming, "Take Incoming from Result" },
+        { ckm.diffget_current, "Take Current from Result" },
+        { ckm.toggle_scroll_sync, "Link / unlink vertical scrolling" },
+        { ckm.toggle_maximize, "Maximize / restore focused pane" },
+        { { "u", "<C-r>" }, "Undo / redo Result" },
       }, is_bound)
     )
   end
@@ -305,24 +322,38 @@ local function toggle_review_help(tabpage, session)
       { "j / l", "Move left / right" },
       { "s", "Stage / unstage hunk under cursor" },
       { "r", "Revert hunk to left baseline (y confirms)" },
-      { "o", "Send hunk to OMP draft (optional message)" },
     } },
   }
+  if session and session.merge then
+    sections = build_sections(resolve.all_keymaps(), function(key)
+      return lifecycle.owns_keymap(tabpage, key)
+    end, { conflict = true, popup = true })
+  end
   local width, key_width = compute_width(sections)
   local lines, hls = render_group(sections, math.min(width, 88), key_width)
-  vim.list_extend(lines, {
-    "",
-    " Revert restores the file; unstage changes only Git's index.",
-    " Revert/stash refuse unsaved files. Save outside review first.",
-    " OMP: Ctrl-s adds hunk + message to draft; Ctrl-q cancels.",
-  })
+  if session and session.merge then
+    vim.list_extend(lines, {
+      "",
+      " Only Result is editable. Use normal Neovim editing keys.",
+      " Manual edits need Mark Resolved; save Result before staging.",
+    })
+  else
+    vim.list_extend(lines, {
+      "",
+      " Revert restores the file; unstage changes only Git's index.",
+      " Revert/stash refuse unsaved files. Save outside review first.",
+    })
+  end
   setup_highlights()
   handle = require("codediff.ui.dialog").open({ tabpage = tabpage }, {
-    title = "Review help", lines = lines, filetype = "codediff-help",
+    title = session and session.merge and "Merge help" or "Review help", lines = lines, filetype = "codediff-help",
     footer = "h/q/Esc/Ctrl-q close",
   })
   review_help = handle
   vim.keymap.set("n", "h", handle.close, { buffer = handle.bufnr, nowait = true })
+  for _, key in ipairs(normalize.key_list(resolve.keymaps_for("view").show_help)) do
+    vim.keymap.set("n", key, handle.close, { buffer = handle.bufnr, nowait = true })
+  end
   for _, hl in ipairs(hls) do
     vim.api.nvim_buf_add_highlight(handle.bufnr, ns, hl[4], hl[1], hl[2], hl[3])
   end

@@ -1,5 +1,7 @@
 # Simplified Neovim Diff Rendering - Quick Reference
 
+Conceptual rendering notes for ordinary diffs. Helper names below are illustrative, not public plugin APIs. See [`lua/codediff/ui/core.lua`](../lua/codediff/ui/core.lua) for the implementation and the [merge guide](../README.md#conflict-and-merge-controls) for four-pane behavior.
+
 ## Input Example
 
 ```
@@ -75,7 +77,7 @@ Calculate:
 ```
 
 **Code:**
-```lua
+```text
 if not orig_empty and mod_empty then
     insert_filler_lines(right_bufnr, after_line = 1, count = 1)
 end
@@ -134,21 +136,10 @@ Insertion: after_line = original_range.start_line - 1
 
 ## Quick Test
 
-```lua
-local diff = require('vscode-diff.diff')
-local render = require('vscode-diff.render')
+Create two files with the contents above, then run:
 
-render.setup_highlights()
-
-local original = {"line 1", "line 2 to delete", "line 3"}
-local modified = {"line 1", "line 3", "line 4 added"}
-
-local diff_result = diff.compute_diff(original, modified)
-local bufnr_left = vim.api.nvim_create_buf(false, true)
-local bufnr_right = vim.api.nvim_create_buf(false, true)
-
-render.render_diff(bufnr_left, bufnr_right, original, modified, diff_result)
--- Should show:
--- - Left: red backgrounds on lines 2-3
--- - Right: green backgrounds on lines 2-3, filler after line 1
+```vim
+:CodeDiff file original.txt modified.txt
 ```
+
+This exercises the real diff/rendering pipeline without relying on internal Lua modules. See the [current command reference](../README.md#usage) for revision and directory comparisons.

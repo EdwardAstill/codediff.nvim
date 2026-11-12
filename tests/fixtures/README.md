@@ -65,8 +65,7 @@ Golden contents are declared in `refresh_repo.files`; assertions do not ask the
 production diff/merge calculator to construct their expectations.
 
 `conflict_gutter.lua` keeps the focused gutter expectations and a `new_repo()`
-builder on the same factory. `keymap_matrix.txt` is the hand-reviewed mapping
-golden; its capture driver belongs to `support/keymaps.lua`, not to fixture data.
+builder on the same factory.
 
 ## API
 

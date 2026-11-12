@@ -24,6 +24,9 @@ local function cleanup_diff(tabpage)
     return
   end
   diff.closing = true
+  if diff.merge_maximized then
+    require("codediff.ui.conflict.view.result").restore_maximize(diff)
+  end
   if diff.popup then
     require("codediff.ui.popup").restore_chrome(diff)
   end
@@ -72,6 +75,9 @@ local function cleanup_diff(tabpage)
       pcall(vim.api.nvim_buf_delete, diff.modified_bufnr, { force = true })
     end
   end
+  if diff.base_bufnr and vim.api.nvim_buf_is_valid(diff.base_bufnr) and not accessors.is_buffer_shared(diff.base_bufnr, tabpage) then
+    pcall(vim.api.nvim_buf_delete, diff.base_bufnr, { force = true })
+  end
 
   -- Clear window variables if windows still exist
   if diff.original_win and vim.api.nvim_win_is_valid(diff.original_win) then
@@ -83,6 +89,11 @@ local function cleanup_diff(tabpage)
     welcome_window.apply_normal(diff.modified_win)
     vim.wo[diff.modified_win].scrollbind = false
     vim.w[diff.modified_win].codediff_restore = nil
+  end
+
+  if diff.base_win and vim.api.nvim_win_is_valid(diff.base_win) then
+    vim.wo[diff.base_win].scrollbind = false
+    vim.w[diff.base_win].codediff_restore = nil
   end
 
   -- Clear result window variable if exists (conflict mode)
@@ -97,13 +108,16 @@ local function cleanup_diff(tabpage)
   -- Clear tab-specific autocmd groups
   pcall(vim.api.nvim_del_augroup_by_name, "codediff_lifecycle_tab_" .. tabpage)
   pcall(vim.api.nvim_del_augroup_by_name, "codediff_working_sync_" .. tabpage)
+  if diff.merge_scroll_autocmd then
+    pcall(vim.api.nvim_del_autocmd, diff.merge_scroll_autocmd)
+  end
 
   -- Remove from tracking
   active_diffs[tabpage] = nil
 end
 
 local function owns_window(diff, winid)
-  if diff.original_win == winid or diff.modified_win == winid or diff.result_win == winid then
+  if diff.original_win == winid or diff.modified_win == winid or diff.base_win == winid or diff.result_win == winid then
     return true
   end
   local panel_view = diff.panel and diff.panel.view
@@ -165,7 +179,7 @@ function M.setup_autocmds()
       for tabpage, diff in pairs(session.get_active_diffs()) do
         if diff.popup and not diff.popup.closing and owns_window(diff, closed_win) then
           local root = diff.panel and diff.panel.view
-          local hidden_panel = root and root.is_hidden and closed_win ~= diff.original_win and closed_win ~= diff.modified_win and closed_win ~= diff.result_win
+          local hidden_panel = root and root.is_hidden and closed_win ~= diff.original_win and closed_win ~= diff.modified_win and closed_win ~= diff.base_win and closed_win ~= diff.result_win
           if not hidden_panel then
             vim.schedule(function()
               if session.get_active_diffs()[tabpage] == diff then
@@ -313,6 +327,9 @@ local function cleanup_for_quit(tabpage)
     if diff.modified_bufnr then
       bufs_to_delete[diff.modified_bufnr] = true
     end
+    if diff.base_bufnr then
+      bufs_to_delete[diff.base_bufnr] = true
+    end
     -- Conflict result buffer
     if diff.result_bufnr then
       bufs_to_delete[diff.result_bufnr] = true
@@ -341,6 +358,27 @@ function M.close(tabpage)
   local diff = session.get_active_diffs()[tabpage]
   if not diff or not vim.api.nvim_tabpage_is_valid(tabpage) then
     return false
+  end
+  if diff.exit_on_close then
+    local paths, failure = {}, nil
+    for path in pairs(diff.conflict_files or {}) do
+      failure = require("codediff.ui.conflict.tracking").stage_error(path)
+      if failure then break end
+      paths[#paths + 1] = require("codediff.core.git").get_relative_path(path, diff.git_root)
+    end
+    if not failure and #paths > 0 then
+      local checked = false
+      require("codediff.core.git.conflicts").before_mutation(diff.git_root, paths, true, function(err)
+        failure, checked = err, true
+      end)
+      if not vim.wait(10000, function() return checked end, 10) then
+        failure = "Timed out checking merge inputs."
+      end
+    end
+    if failure then
+      vim.notify("Cannot finish merge: " .. failure .. " Resolve and :write, or :cquit to abort.", vim.log.levels.WARN)
+      return false
+    end
   end
   if not accessors.confirm_close_with_unsaved(tabpage) then
     return false

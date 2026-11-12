@@ -32,6 +32,7 @@ function M.capture(session)
   if session.result_bufnr then
     data.base = vim.deepcopy(session.merge_base_lines or {})
     data.result = M.lines(session.result_bufnr)
+    data.merge_input_identity = session.merge_input_identity
   end
   return data
 end
@@ -41,7 +42,7 @@ local function same_source(first, second)
 end
 
 function M.same(first, second)
-  if not first or not second then
+  if not first or not second or first.merge_input_identity ~= second.merge_input_identity then
     return false
   end
   for _, side in ipairs({ "original", "modified", "base" }) do
@@ -84,6 +85,31 @@ end
 function M.read(session, event, previous, done)
   local data = { sources = M.describe(session), ticks = {} }
   local git = require("codediff.core.git")
+  local result_buf = session.result_bufnr
+  if session.merge and result_buf then
+    if previous and not policy.needs_read(":2", event) then
+      data = M.capture(session)
+      data.ticks = { [result_buf] = api.nvim_buf_get_changedtick(result_buf) }
+      done(nil, data)
+      return
+    end
+    git.get_merge_inputs(session.git_root, session.original.relative, function(err, merge_inputs)
+      vim.schedule(function()
+        if err or not api.nvim_buf_is_valid(result_buf) then
+          done(err or "Merge Result buffer was closed")
+          return
+        end
+        data.base = merge_inputs.base_lines
+        data.original = normalized(merge_inputs.incoming_lines)
+        data.modified = normalized(merge_inputs.current_lines)
+        data.merge_input_identity = merge_inputs.identity
+        data.result = M.lines(result_buf)
+        data.ticks[result_buf] = api.nvim_buf_get_changedtick(result_buf)
+        done(nil, data)
+      end)
+    end)
+    return
+  end
   local remaining, first_error = 1, nil
   local function finish(err)
     first_error = first_error or err

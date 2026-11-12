@@ -13,6 +13,7 @@ function M.arrange(tabpage)
   if not session then
     return
   end
+  require("codediff.ui.conflict.view.result").restore_maximize(session)
   if session.popup then
     require("codediff.ui.popup").arrange(session)
     return
@@ -31,11 +32,25 @@ function M.arrange(tabpage)
   local panel_name = session.panel and session.panel.name or "explorer"
   local panel_config = config.options[panel_name] or {}
   local panel_position = panel_config.position or "left"
+  local merging = session.base_win and vim.api.nvim_win_is_valid(session.base_win)
+  if panel_visible and merging then
+    if panel_position ~= "left" then
+      vim.api.nvim_win_call(panel_win, function() vim.cmd("wincmd H") end)
+      session.merge_panel_moved = true
+    end
+    panel_position = "left"
+  elseif panel_visible and session.merge_panel_moved then
+    session.merge_panel_moved = nil
+    if panel_position == "bottom" then
+      vim.api.nvim_win_call(panel_win, function() vim.cmd("wincmd J") end)
+    end
+  end
+  local panel_width = math.max(1, math.min(panel_config.width or 30, vim.o.columns - 5))
 
   -- Step 1: Pin panel size (fixed element)
   if panel_visible then
     if panel_position == "left" then
-      vim.api.nvim_win_set_width(panel_win, panel_config.width)
+      vim.api.nvim_win_set_width(panel_win, panel_width)
     else
       vim.api.nvim_win_set_height(panel_win, panel_config.height)
     end
@@ -70,54 +85,26 @@ function M.arrange(tabpage)
     return
   end
 
-  local has_result = result_win and vim.api.nvim_win_is_valid(result_win)
-
-  -- Step 2: Collect diff windows and sum their current widths
-  -- In center layout, result is a sibling column — include it
-  -- In bottom layout, result is in a separate row — exclude it
-  local result_position = config.options.diff.conflict_result_position
-  local result_is_center = has_result and result_position == "center"
-
+  local base_win = session.base_win
+  local has_grid = base_win and vim.api.nvim_win_is_valid(base_win) and result_win and vim.api.nvim_win_is_valid(result_win)
   local available = vim.api.nvim_win_get_width(original_win) + vim.api.nvim_win_get_width(modified_win)
-  if result_is_center then
-    available = available + vim.api.nvim_win_get_width(result_win)
-  end
-
-  -- Step 3: Handle result window height (bottom layout)
-  if has_result and not result_is_center then
-    local pct = math.min(90, math.max(10, config.options.diff.conflict_result_height))
-    vim.api.nvim_win_set_height(result_win, math.floor(vim.o.lines * pct / 100))
-  end
-
-  -- Step 4: Distribute widths among diff panes
-  if result_is_center then
-    -- Three panes with configurable ratio
-    local r = config.options.diff.conflict_result_width_ratio
-    local total_r = r[1] + r[2] + r[3]
-
-    -- Determine left/right based on window column positions
-    local orig_col = vim.api.nvim_win_get_position(original_win)[2]
-    local mod_col = vim.api.nvim_win_get_position(modified_win)[2]
-    local left_win = orig_col <= mod_col and original_win or modified_win
-    local right_win = left_win == original_win and modified_win or original_win
-
-    local lw = math.floor(available * r[1] / total_r)
-    local cw = math.floor(available * r[2] / total_r)
-
-    vim.api.nvim_win_set_width(left_win, lw)
-    vim.api.nvim_win_set_width(result_win, cw)
-    vim.api.nvim_win_set_width(right_win, available - lw - cw)
-  else
-    -- Two diff panes, equal split
-    local half = math.floor(available / 2)
-    vim.api.nvim_win_set_width(original_win, half)
-    vim.api.nvim_win_set_width(modified_win, available - half)
+  local half = math.max(1, math.floor(available / 2))
+  vim.api.nvim_win_set_width(original_win, half)
+  vim.api.nvim_win_set_width(modified_win, math.max(1, available - half))
+  if has_grid then
+    vim.api.nvim_win_set_width(base_win, half)
+    vim.api.nvim_win_set_width(result_win, math.max(1, available - half))
+    for _, pair in ipairs({ { original_win, base_win }, { modified_win, result_win } }) do
+      local height = vim.api.nvim_win_get_height(pair[1]) + vim.api.nvim_win_get_height(pair[2])
+      vim.api.nvim_win_set_height(pair[1], math.max(1, math.floor(height / 2)))
+      vim.api.nvim_win_set_height(pair[2], math.max(1, height - math.floor(height / 2)))
+    end
   end
 
   -- Step 5: Re-pin panel size (undo disturbance from step 4)
   if panel_visible then
     if panel_position == "left" then
-      vim.api.nvim_win_set_width(panel_win, panel_config.width)
+      vim.api.nvim_win_set_width(panel_win, panel_width)
     else
       vim.api.nvim_win_set_height(panel_win, panel_config.height)
     end

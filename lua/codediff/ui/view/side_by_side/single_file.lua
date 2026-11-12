@@ -21,6 +21,7 @@ local show_real_file_buffer = helpers.show_real_file_buffer
 ---@param opts table
 ---@return boolean
 local function single_file_unchanged(session, opts)
+  if session.result_bufnr then return false end
   if not session.single_pane and not session.popup then
     return false
   end
@@ -68,21 +69,8 @@ local function show_single_file(tabpage, opts)
   -- Mark single-pane BEFORE closing window (prevents cleanup trigger)
   session.single_pane = not session.popup or nil
 
-  -- Leaving conflict mode: close the result window too, mirroring M.update.
-  -- Without this the 3rd conflict pane survives under the single-file view, and
-  -- returning to the conflict file reuses that stale window whose buffer still
-  -- has unsaved merge edits, so `:edit` fails with E37. Closing is forced so it
-  -- also works when 'hidden' is off; the buffer only becomes hidden, never
-  -- unloaded, so in-progress merge edits are preserved.
-  local _, old_result_win = lifecycle.get_result(tabpage)
-  lifecycle.set_result(tabpage, nil, nil)
-  if old_result_win and vim.api.nvim_win_is_valid(old_result_win) then
-    if session.popup then
-      require("codediff.ui.popup").prepare_switch(old_result_win)
-    end
-    vim.w[old_result_win].codediff_restore = nil
-    pcall(vim.api.nvim_win_close, old_result_win, true)
-  end
+  require("codediff.ui.conflict.view.result").close_grid(session)
+  lifecycle.update_merge(tabpage, false)
 
   -- Close the unused window
   local keep_win, close_win

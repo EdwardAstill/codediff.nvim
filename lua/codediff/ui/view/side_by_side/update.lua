@@ -118,6 +118,7 @@ function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
   if not session then
     return false
   end
+  require("codediff.ui.conflict.view.result").restore_maximize(session)
   local generation = session.refresh and session.refresh.generation
   local function current()
     return require("codediff.ui.refresh").is_current(tabpage, session, generation)
@@ -152,13 +153,11 @@ function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
   lifecycle.update_merge(tabpage, session_config.conflict)
 
   -- Handle result window when switching between conflict and non-conflict modes
-  local old_result_bufnr, old_result_win = lifecycle.get_result(tabpage)
-  if not session_config.conflict and old_result_win and vim.api.nvim_win_is_valid(old_result_win) then
-    if session.popup then
-      require("codediff.ui.popup").prepare_switch(old_result_win)
+  if not session_config.conflict and (session.result_win or session.base_win) then
+    require("codediff.ui.conflict.view.result").close_grid(session)
+    if not session.popup then
+      vim.fn.win_splitmove(original_win, modified_win, { vertical = true, rightbelow = config.options.diff.original_position == "right" })
     end
-    lifecycle.set_result(tabpage, nil, nil)
-    vim.api.nvim_win_close(old_result_win, true)
     layout.arrange(tabpage)
   end
 
@@ -192,8 +191,14 @@ function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
   local modified_is_virtual = is_virtual_revision(session_config.modified_revision)
 
   -- Prepare new buffer information
-  local original_info = prepare_buffer(original_is_virtual, session_config.git_root, session_config.original_revision, session_config.original)
-  local modified_info = prepare_buffer(modified_is_virtual, session_config.git_root, session_config.modified_revision, session_config.modified)
+  local original_info, modified_info
+  if session_config.conflict then
+    local inputs = require("codediff.ui.conflict.view.inputs")
+    original_info, modified_info = inputs.prepare_snapshot(session_config, "original"), inputs.prepare_snapshot(session_config, "modified")
+  else
+    original_info = prepare_buffer(original_is_virtual, session_config.git_root, session_config.original_revision, session_config.original)
+    modified_info = prepare_buffer(modified_is_virtual, session_config.git_root, session_config.modified_revision, session_config.modified)
+  end
 
   -- Determine if we need to wait for virtual file content
   local wait_state = {
@@ -215,24 +220,26 @@ function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
       return
     end
 
+    if session_config.conflict then
+      local inputs = session_config.merge_inputs
+      if not inputs then
+        vim.notify("Cannot open merge without validated index snapshots", vim.log.levels.ERROR)
+        return
+      end
+    end
     -- Always read from buffers (single source of truth)
     local original_lines = vim.api.nvim_buf_get_lines(original_info.bufnr, 0, -1, false)
     local modified_lines = vim.api.nvim_buf_get_lines(modified_info.bufnr, 0, -1, false)
+    if session_config.conflict then
+      original_lines, modified_lines = session_config.merge_inputs.incoming_lines, session_config.merge_inputs.current_lines
+    end
 
     local should_auto_scroll = auto_scroll_to_first_hunk == true
     local lines_diff
 
     if session_config.conflict then
-      -- Conflict mode: Fetch base content and render both sides against base
-      local git = require("codediff.core.git")
-      local base_revision = ":1"
-
-      git.get_file_content(base_revision, session_config.git_root, session_config.original.relative, function(err, base_lines)
-        if err then
-          base_lines = {}
-        end
-
-        vim.schedule(function()
+      local base_lines = session_config.merge_inputs.base_lines
+      vim.schedule(function()
           if not current() or not vim.api.nvim_buf_is_valid(original_info.bufnr) or not vim.api.nvim_buf_is_valid(modified_info.bufnr) then
             return
           end
@@ -246,9 +253,6 @@ function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
             lifecycle.update_diff_result(tabpage, conflict_diffs.base_to_modified_diff)
             lifecycle.update_changedtick(tabpage, vim.api.nvim_buf_get_changedtick(original_info.bufnr), vim.api.nvim_buf_get_changedtick(modified_info.bufnr))
             local is_explorer_mode = session.panel and session.panel.name == "explorer"
-            if session.popup then
-              require("codediff.ui.popup").open_result(session)
-            end
             local success = setup_conflict_result_window(tabpage, session_config, original_win, modified_win, base_lines, conflict_diffs, true)
             if success then
               setup_all_keymaps(tabpage, original_info.bufnr, modified_info.bufnr, is_explorer_mode)
@@ -256,7 +260,6 @@ function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
               conflict.setup_keymaps(tabpage)
             end
           end
-        end)
       end)
     else
       -- Normal mode: Compute and render diff between left and right

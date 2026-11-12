@@ -24,16 +24,16 @@ describe("conflict gutter lifecycle on the screen grid", function()
 
   local function expect_merge(rows, colors)
     rows = rows or fixture.merge_rows
-    for _, focus in ipairs({ "original", "modified", "result" }) do
+    for _, focus in ipairs({ "original", "modified", "base", "result" }) do
       screen:exec("vim.api.nvim_set_current_win(...)", { panes[focus] })
       screen:flush()
-      for _, side in ipairs({ "original", "modified", "result" }) do
+      for _, side in ipairs({ "original", "modified", "base", "result" }) do
         gutter.expect_pane(screen, panes[side], rows[side], side .. " while focused on " .. focus, colors and colors[side])
       end
     end
   end
 
-  local function colors(original, modified, result)
+  local function colors(original, modified, result, base)
     return screen:exec(
       [[
       local names = ...
@@ -43,11 +43,11 @@ describe("conflict gutter lifecycle on the screen grid", function()
       end
       return values
     ]],
-      { { original = original, modified = modified, result = result } }
+      { { original = original, modified = modified, base = base or result, result = result } }
     )
   end
 
-  it("renders a real merge with the full block shape in all three panes", function()
+  it("renders a real merge with the full block shape in all four panes", function()
     expect_merge(nil, colors("", "", ""))
   end)
 
@@ -120,7 +120,7 @@ describe("conflict gutter lifecycle on the screen grid", function()
     expect_merge()
   end)
 
-  it("keeps both panes correct after resizing the attached UI", function()
+  it("keeps all four panes correct after resizing the attached UI", function()
     screen:request("nvim_ui_try_resize", { 100, 36 })
     screen:flush()
     expect_merge()
@@ -177,18 +177,31 @@ describe("conflict gutter lifecycle on the screen grid", function()
     expect_merge(rows, colors("Rejected", "Accepted", "Resolved"))
   end)
 
-  it("removes Result markers when manual editing empties its tracked range", function()
+  it("keeps an emptied Result visibly unresolved until explicitly approved", function()
     screen:exec("vim.api.nvim_set_current_win(...)", { panes.result })
     screen:input("2G3dd")
     screen:wait_for(function()
       return screen:exec("return vim.api.nvim_buf_line_count(...) == 3", { panes.result_buf })
     end)
     local rows = vim.deepcopy(fixture.merge_rows)
-    rows.result = { "before", "after", "tail" }
+    rows.result = { "  before", "╭─╱╱╱╱", "│ ╱╱╱╱", "│ ╱╱╱╱", "╰─╱╱╱╱", "  after", "  tail" }
+    expect_merge(rows, colors("", "", ""))
+    screen:exec([[
+      vim.api.nvim_set_current_win(...)
+      vim.api.nvim_win_set_cursor(0, { 2, 0 })
+      assert(require('codediff.ui.conflict').mark_resolved(gutter_test_tab))
+    ]], { panes.result })
     expect_merge(rows, colors("Resolved", "Resolved", "Resolved"))
   end)
 
-  it("refreshes marker colors after a manual Result edit", function()
+  it("invalidates approval after a manual Result edit and requires Mark Resolved", function()
+    screen:exec([[
+      local s = require('codediff.ui.lifecycle').get_session(gutter_test_tab)
+      vim.api.nvim_set_current_win(s.base_win)
+      vim.api.nvim_win_set_cursor(0, { 2, 0 })
+      assert(require('codediff.ui.conflict').accept_base(gutter_test_tab))
+    ]])
+    expect_merge(nil, colors("Resolved", "Resolved", "Resolved", "Accepted"))
     screen:exec("vim.api.nvim_set_current_win(...); vim.api.nvim_win_set_cursor(0, { 2, 0 })", { panes.result })
     screen:input("ccMANUAL<Esc>")
     screen:wait_for(function()
@@ -196,6 +209,12 @@ describe("conflict gutter lifecycle on the screen grid", function()
     end)
     local rows = vim.deepcopy(fixture.merge_rows)
     rows.result[2] = "╭─MANUAL"
+    expect_merge(rows, colors("", "", ""))
+    screen:exec([[
+      vim.api.nvim_set_current_win(...)
+      vim.api.nvim_win_set_cursor(0, { 2, 0 })
+      assert(require('codediff.ui.conflict').mark_resolved(gutter_test_tab))
+    ]], { panes.result })
     expect_merge(rows, colors("Resolved", "Resolved", "Resolved"))
   end)
 

@@ -1,6 +1,6 @@
 # Filler Line Algorithm
 
-This document provides a comprehensive explanation of how the filler line insertion mechanism works in codediff.nvim, which replicates VSCode's advanced diff algorithm for side-by-side view alignment.
+This document explains ordinary two-pane filler alignment. Examples are illustrative fragments, not a public Lua API; abbreviated pseudocode is marked as text. The four-pane merge grid additionally aligns Base and live Result through [`compute_grid_fillers()`](../lua/codediff/ui/conflict/merge/fillers.lua).
 
 ## Table of Contents
 
@@ -19,10 +19,10 @@ This document provides a comprehensive explanation of how the filler line insert
 
 The filler line algorithm ensures that corresponding lines in a side-by-side diff view are visually aligned, making it easy to see which lines changed, were added, or were removed. When one side has more lines than the other within a changed region, "filler lines" (blank placeholder lines) are inserted on the shorter side to maintain alignment.
 
-This implementation precisely matches VSCode's diff rendering behavior by using the same alignment logic from VSCode's TypeScript implementation.
+The alignment logic follows VSCode's side-by-side diff rendering approach.
 
 **Implementation Location**:
-- **Our code**: `lua/vscode-diff/render.lua`, function `calculate_fillers()` (lines 283-367)
+- **Our code**: [`lua/codediff/ui/core.lua`](../lua/codediff/ui/core.lua), local function `calculate_fillers()`
 - **VSCode reference**: `src/vs/editor/browser/widget/diffEditor/features/diffEditorViewZones.ts`, function `computeRangeAlignment()` (lines 475-615)
 
 ---
@@ -77,7 +77,7 @@ Alignment: orig[35,36) → mod[35,39)
 
 The algorithm receives diff mappings from the C diff core, where each mapping contains:
 
-```lua
+```text
 mapping = {
   original = { start_line, end_line },    -- Line range in original file
   modified = { start_line, end_line },    -- Line range in modified file
@@ -93,7 +93,7 @@ mapping = {
 
 ### Phase 1: Creating Alignments
 
-**Location**: `lua/vscode-diff/render.lua`, lines 285-339  
+**Location**: `calculate_fillers()` in `lua/codediff/ui/core.lua`
 **VSCode reference**: `diffEditorViewZones.ts`, lines 475-615
 
 #### Step 1.1: Initialize Tracking Variables
@@ -116,7 +116,7 @@ local first = true
 
 #### Step 1.1.1: Handle Gap Alignment
 
-```lua
+```text
 local function handle_gap_alignment(orig_line_exclusive, mod_line_exclusive)
   local orig_gap = orig_line_exclusive - last_orig_line
   local mod_gap = mod_line_exclusive - last_mod_line
@@ -239,7 +239,7 @@ local mod_range_len = mod_line_exclusive - last_mod_line
 
 ##### Step 1.2.4: Create Alignment
 
-```lua
+```text
 if orig_range_len > 0 or mod_range_len > 0 then
   table.insert(alignments, {...})
 end
@@ -280,7 +280,7 @@ end
 
 There are **two alignment opportunities** per inner change:
 
-##### Opportunity 1: BEFORE Alignment (lines 324-326)
+##### Opportunity 1: BEFORE Alignment
 
 ```lua
 if inner.original.start_col > 1 and inner.modified.start_col > 1 then
@@ -308,7 +308,7 @@ The unchanged prefix (columns 1-52) should be aligned. This creates `emit(14, 14
 
 **VSCode reference**: Lines 585-591 in `diffEditorViewZones.ts`
 
-##### Opportunity 2: AFTER Alignment (lines 330-335)
+##### Opportunity 2: AFTER Alignment
 
 ```lua
 local orig_line_len = original_lines[inner.original.end_line] and 
@@ -341,7 +341,7 @@ The change ends at column 1 (before the 52-character line ends), so there's unch
 
 ---
 
-#### Step 1.4: Final Mapping Alignment (line 339)
+#### Step 1.4: Final Mapping Alignment
 
 ```lua
 emit_alignment(mapping.original.end_line, mapping.modified.end_line)
@@ -364,7 +364,7 @@ emit_alignment(mapping.original.end_line, mapping.modified.end_line)
 
 ### Phase 2: Converting Alignments to Fillers
 
-**Location**: `lua/vscode-diff/render.lua`, lines 342-367  
+**Location**: The final alignment loop in `calculate_fillers()` in `lua/codediff/ui/core.lua`
 **VSCode reference**: The filler insertion logic is integrated into VSCode's view zone creation
 
 #### Step 2.1: Iterate Through Alignments
@@ -654,13 +654,13 @@ Key functions:
 
 ### Our Implementation
 
-**File**: `lua/vscode-diff/render.lua`
+**File**: [`lua/codediff/ui/core.lua`](../lua/codediff/ui/core.lua)
 
 Key functions:
-- `calculate_fillers()` (lines 283-367): Complete algorithm
-- `emit_alignment()` (lines 290-318): Alignment creation
-- Inner change processing (lines 322-336): BEFORE/AFTER checks
-- Filler conversion (lines 342-367): Alignment to fillers
+- `calculate_fillers()`: Alignment calculation and filler conversion
+- Nested `handle_gap_alignment()` / `emit_alignment()`: Alignment creation
+- Inner-change loop: BEFORE/AFTER checks
+- `render_diff()`: Applying ordinary two-pane highlights and fillers
 
 ---
 
@@ -684,4 +684,4 @@ The filler line algorithm ensures perfect visual alignment in side-by-side diff 
 - **First flag**: Allows initial alignment at mapping start
 - **Final mapping alignment**: Ensures correctness using ground truth from diff algorithm
 
-This implementation precisely matches VSCode's behavior, ensuring consistent diff rendering across both platforms.
+For merge-specific four-pane alignment, see [`lua/codediff/ui/conflict/merge/fillers.lua`](../lua/codediff/ui/conflict/merge/fillers.lua). The [user merge guide](../README.md#conflict-and-merge-controls) describes the current layout and scroll controls.

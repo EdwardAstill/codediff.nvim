@@ -47,6 +47,9 @@ local function session_buffers(sess)
       end
     end
   end
+  if sess.base_bufnr and vim.api.nvim_buf_is_valid(sess.base_bufnr) then
+    buffers.base = sess.base_bufnr
+  end
   if sess.result_bufnr and vim.api.nvim_buf_is_valid(sess.result_bufnr) then
     buffers.result = sess.result_bufnr
   end

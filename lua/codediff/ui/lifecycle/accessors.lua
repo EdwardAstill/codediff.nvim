@@ -108,7 +108,7 @@ end
 function M.find_tabpage_by_buffer(bufnr)
   local active_diffs = get_active_diffs()
   for tabpage, sess in pairs(active_diffs) do
-    if sess.original_bufnr == bufnr or sess.modified_bufnr == bufnr or sess.result_bufnr == bufnr then
+    if sess.original_bufnr == bufnr or sess.modified_bufnr == bufnr or sess.base_bufnr == bufnr or sess.result_bufnr == bufnr then
       return tabpage
     end
   end
@@ -119,7 +119,7 @@ end
 function M.is_buffer_shared(bufnr, except_tabpage)
   for tabpage, sess in pairs(get_active_diffs()) do
     if tabpage ~= except_tabpage and vim.api.nvim_tabpage_is_valid(tabpage) then
-      if sess.original_bufnr == bufnr or sess.modified_bufnr == bufnr or sess.result_bufnr == bufnr then
+      if sess.original_bufnr == bufnr or sess.modified_bufnr == bufnr or sess.base_bufnr == bufnr or sess.result_bufnr == bufnr then
         return true
       end
     end
@@ -361,6 +361,9 @@ function M.update_buffers(tabpage, original_bufnr, modified_bufnr)
         end
       end
     end
+    if sess.base_bufnr then
+      keep[sess.base_bufnr] = true
+    end
     if sess.result_bufnr then
       keep[sess.result_bufnr] = true
     end
@@ -541,10 +544,10 @@ function M.confirm_close_with_unsaved(tabpage)
     local filename = vim.fn.fnamemodify(path, ":t")
     msg = msg .. "  • " .. filename .. "\n"
   end
-  msg = msg .. "\nDiscard changes and close?"
+  msg = msg .. "\nDiscard changes and close, keep the buffers, or cancel?"
 
   -- Show confirmation dialog
-  local choice = vim.fn.confirm(msg, "&Discard\n&Cancel", 2, "Warning")
+  local choice = vim.fn.confirm(msg, "&Discard\n&Cancel\n&Keep changes and close", 2, "Warning")
 
   if choice == 1 then
     -- Discard: reload buffers from disk to restore original content (with conflict markers)
@@ -555,8 +558,11 @@ function M.confirm_close_with_unsaved(tabpage)
         vim.api.nvim_buf_call(bufnr, function()
           vim.cmd("edit!")
         end)
+        require("codediff.ui.conflict.tracking").forget_result(path)
       end
     end
+    return true
+  elseif choice == 3 then
     return true
   else
     -- Cancel

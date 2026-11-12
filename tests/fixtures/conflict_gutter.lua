@@ -47,7 +47,7 @@ local M = {
     name = "empty without filler",
     range = { start_line = 3, end_line = 3 },
     fillers = {},
-    rows = { "  one", "  two", "  three", "  four", "  five", "  six" },
+    rows = { "  one", "  two", "[ three", "  four", "  five", "  six" },
   },
   {
     name = "empty with one filler",
@@ -115,10 +115,22 @@ local M = {
     fillers = { [1] = 1, [5] = 1 },
     rows = { "  one", "  ╱╱╱╱", "  two", "╭─three", "╰─four", "  five", "  ╱╱╱╱", "  six" },
   },
+  {
+    name = "empty projection at BOF without filler",
+    range = { start_line = 1, end_line = 1 },
+    fillers = {},
+    rows = { "[ one", "  two", "  three", "  four", "  five", "  six" },
+  },
+  {
+    name = "empty projection at EOF without filler",
+    range = { start_line = 7, end_line = 7 },
+    fillers = {},
+    rows = { "  one", "  two", "  three", "  four", "  five", "[ six" },
+  },
 }
 
--- A real merge with an interior filler in incoming, plus a second file whose
--- filler is on the opposite side. Both use independently authored expectations.
+-- Both merges have unequal conflict heights, requiring four-way padding through
+-- the end of the block while leaving the following context unmarked.
 function M.new_repo()
   local repo = require("tests.support.repository").new({ unborn = true })
   repo.write_file("conf.txt", { "before", "base1", "base2", "base3", "after", "tail" })
@@ -141,15 +153,17 @@ function M.new_repo()
 end
 
 M.merge_rows = {
-  original = { "  before", "╭─base1", "│ THEIRS2", "│ ╱╱╱╱", "╰─THEIRS3", "  after", "  tail" },
+  original = { "  before", "╭─base1", "│ THEIRS2", "│ THEIRS3", "╰─╱╱╱╱", "  after", "  tail" },
   modified = { "  before", "╭─OURS1", "│ inserted", "│ OURS2", "╰─base3", "  after", "  tail" },
-  result = { "  before", "╭─base1", "│ base2", "╰─base3", "  after", "  tail" },
+  base = { "  before", "╭─base1", "│ base2", "│ base3", "╰─╱╱╱╱", "  after", "  tail" },
+  result = { "  before", "╭─base1", "│ base2", "│ base3", "╰─╱╱╱╱", "  after", "  tail" },
 }
 
 M.other_merge_rows = {
   original = { "  beforeB", "╭─THEIRS_B", "╰─extraB", "  afterB" },
-  modified = { "  beforeB", "╭─╱╱╱╱", "╰─OURS_B", "  afterB" },
-  result = { "  beforeB", "[ baseB", "  afterB" },
+  modified = { "  beforeB", "╭─OURS_B", "╰─╱╱╱╱", "  afterB" },
+  base = { "  beforeB", "╭─baseB", "╰─╱╱╱╱", "  afterB" },
+  result = { "  beforeB", "╭─baseB", "╰─╱╱╱╱", "  afterB" },
 }
 
 return M

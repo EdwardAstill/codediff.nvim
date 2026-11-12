@@ -122,7 +122,20 @@ function M.get_status(git_root, callback, pathspec)
         i = i + 1
       end
 
-      callback(nil, result)
+      if #result.conflicts == 0 then
+        callback(nil, result)
+        return
+      end
+      require("codediff.core.git.conflicts").get_unmerged(git_root, pathspec, function(index_err, unmerged)
+        if index_err then
+          callback(index_err, nil)
+          return
+        end
+        for _, file in ipairs(result.conflicts) do
+          file.merge_input_identity = unmerged[file.path] and unmerged[file.path].identity or false
+        end
+        callback(nil, result)
+      end)
     end
   )
 end

@@ -47,11 +47,17 @@ function M.render()
     return ""
   end
   local state = states[win]
-  if state and state.bufnr == vim.api.nvim_win_get_buf(win) and vim.v.virtnum < 0 and vim.wo[win].signcolumn ~= "no" then
-    local line_markers = state.markers[vim.v.lnum]
-    local marker = line_markers and line_markers[-vim.v.virtnum]
-    if marker then
-      return render_marker(win, marker)
+  if state and state.bufnr == vim.api.nvim_win_get_buf(win) then
+    if vim.v.virtnum < 0 then
+      local line = state.bof and vim.v.lnum == 1 and 0 or vim.v.lnum
+      if line == 0 then state.bof_drawn = true end
+      local line_markers = state.markers[line]
+      local marker = line_markers and line_markers[-vim.v.virtnum]
+      if marker and vim.wo[win].signcolumn ~= "no" then
+        return render_marker(win, marker)
+      end
+    elseif vim.v.lnum == 1 and state.bof_drawn then
+      state.bof = false
     end
   end
   return default_statuscolumn(win)
@@ -88,18 +94,17 @@ function M.update(win, projections, filler_counts)
     return false
   end
 
+  filler_counts = filler_counts or {}
   local markers = {}
-  local bof_count = filler_counts and filler_counts[0] or 0
+  state.bof_count = filler_counts[0] or 0
   for _, projection in ipairs(projections or {}) do
     for line, offsets in pairs(projection.markers) do
       for offset, text in pairs(offsets) do
         if offset > 0 then
-          -- BOF fillers and fillers after line one share v:lnum=1; Neovim
-          -- numbers them consecutively, including off-screen BOF fillers.
-          local lnum = math.max(1, line)
-          local virtnum = offset + (line == 1 and bof_count or 0)
-          markers[lnum] = markers[lnum] or {}
-          markers[lnum][virtnum] = { text = text, highlight = projection.highlight }
+          -- v:virtnum counts remaining filler rows, from -count through -1.
+          local virtnum = (filler_counts[line] or 0) - offset + 1
+          markers[line] = markers[line] or {}
+          markers[line][virtnum] = { text = text, highlight = projection.highlight }
         end
       end
     end
@@ -121,6 +126,22 @@ function M.detach(win)
 end
 
 if vim.fn.exists("+statuscolumn") == 1 then
+  -- BOF and below-line-one fillers share v:lnum=1, but not a drawing pass.
+  vim.api.nvim_set_decoration_provider(vim.api.nvim_create_namespace("codediff-conflict-gutter"), {
+    on_win = function(_, win, _, top)
+      local state = states[win]
+      if not state then return false end
+      state.bof, state.bof_drawn = false, false
+      if top == 0 and (state.bof_count or 0) > 0 then
+        local view = vim.api.nvim_win_call(win, vim.fn.winsaveview)
+        state.bof = view.topfill > 0
+      end
+      return state.bof
+    end,
+    on_line = function(_, win, _, row)
+      if row > 0 then states[win].bof = false end
+    end,
+  })
   local group = vim.api.nvim_create_augroup("CodeDiffConflictGutterWindows", { clear = true })
   vim.api.nvim_create_autocmd("WinClosed", {
     group = group,

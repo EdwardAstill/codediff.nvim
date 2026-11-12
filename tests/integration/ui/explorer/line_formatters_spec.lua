@@ -154,4 +154,24 @@ describe("Explorer line formatters", function()
     assert.matches("%.%.%s+%?%? %s*$", content)
     assert.equals(24, vim.fn.strdisplaywidth(content))
   end)
+
+  it("preserves conflict filenames before truncating review status", function()
+    local formatter = require("codediff.ui.explorer.formatters.file")
+    for _, name in ipairs({ "wide.txt", "second.txt" }) do
+      for _, reviewed in ipairs({ true, false }) do
+        local layout = formatter({
+          filename = name, directory = "", indent = "", icon = "",
+          status = "!", status_hl = "CodeDiffStatusConflict", status_right_margin = 1,
+          conflict = { reviewed = reviewed, unresolved_count = 2 },
+        })
+        local narrow = line_layout.render(layout, 24):content()
+        assert.is_truthy(narrow:find(name, 1, true))
+        assert.is_truthy(narrow:find(reviewed and "2" or "needs", 1, true))
+        assert.is_truthy(narrow:find("!", 1, true))
+        assert.equals(24, vim.fn.strdisplaywidth(narrow))
+        local wide = line_layout.render(layout, 40):content()
+        assert.is_truthy(wide:find(reviewed and "2 unresolved" or "needs review", 1, true))
+      end
+    end
+  end)
 end)

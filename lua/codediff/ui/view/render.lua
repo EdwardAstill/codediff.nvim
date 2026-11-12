@@ -194,7 +194,7 @@ function M.update(session, data, changes)
 
   local helpers = require("codediff.ui.view.helpers")
   local views = {}
-  for _, side in ipairs({ "original", "modified", "result" }) do
+  for _, side in ipairs({ "original", "modified", "base", "result" }) do
     local win = session[side .. "_win"]
     if win and api.nvim_win_is_valid(win) and not views[win] then
       views[win] = { view = api.nvim_win_call(win, vim.fn.winsaveview), scrollbind = vim.wo[win].scrollbind }
@@ -215,10 +215,13 @@ function M.update(session, data, changes)
       local diffs =
         assert(require("codediff.ui.conflict.view.inputs").compute_and_render_conflict(session.original_bufnr, session.modified_bufnr, data.base, data.original, data.modified))
       if changes.inputs then
-        result_view.set_inputs(session, data.base, diffs)
+        session.merge_input_identity = data.merge_input_identity or session.merge_input_identity
+        local bound, bind_error = result_view.set_inputs(session, data.base, diffs)
+        if not bound then error(bind_error) end
       end
+      session.merge_diffs = diffs
       session.stored_diff_result = diffs.base_to_modified_diff
-      require("codediff.ui.conflict").attach_gutter(session.original_win, session.modified_win)
+      require("codediff.ui.conflict").attach_gutter(session.original_win, session.modified_win, session.base_win, session.result_win)
       result_view.render(session)
     elseif session.single_side then
       session.stored_diff_result = core.render_whole_file(session[session.single_side .. "_bufnr"], session.single_side)

@@ -36,7 +36,7 @@ local function sync_chrome()
     session.popup.initial_chrome = nil
   end
   for name, value in pairs(hidden_chrome) do
-    vim.o[name] = value
+    vim.o[name] = session.merge and name == "cmdheight" and chrome.options.cmdheight or value
   end
 end
 
@@ -76,28 +76,33 @@ function M.prepare_switch(win)
   vim.bo[buf].bufhidden = hidden
 end
 
-function M.geometry()
-  local columns = vim.o.columns
-  local rows = math.max(6, vim.o.lines - vim.o.cmdheight - 1)
-  local width = math.max(9, math.min(columns, math.floor(columns * 0.96)))
-  local height = math.max(6, math.min(rows, math.floor(rows * 0.94)))
+function M.geometry(hide_tree, merge)
+  local columns = math.max(1, vim.o.columns)
+  local rows = math.max(1, vim.o.lines - vim.o.cmdheight - 1)
+  local width = math.min(columns, math.max(1, math.floor(columns * 0.96)))
+  local height = math.min(rows, math.max(1, math.floor(rows * 0.94)))
   local col = math.max(0, math.floor((columns - width) / 2))
   local row = math.max(0, math.floor((rows - height) / 2))
-  local left = math.max(3, math.min(26, math.floor(width / 6), width - 6))
-  local before = math.floor((width - left) / 2)
-  local top = math.floor(height / 2)
+  local left = hide_tree and 0 or math.max(1, math.min(26, math.floor(width / 6)))
+  if merge and not hide_tree then
+    left = math.max(1, math.min(require("codediff.config").options.explorer.width + 2, math.floor(width / 3)))
+  end
+  local before = math.max(1, math.floor((width - left) / 2))
+  local top = math.max(1, math.floor(height / 2))
+  local border_size = columns >= 12 and rows >= 6 and 2 or 0
   local function pane(title, footer, x, y, w, h)
+    x, y = math.min(columns - 1, x), math.min(rows - 1, y)
     return {
       relative = "editor",
       row = y,
       col = x,
-      width = math.max(1, w - 2),
-      height = math.max(1, h - 2),
-      border = "rounded",
-      title = " " .. title .. " ",
-      title_pos = "center",
-      footer = footer,
-      footer_pos = "center",
+      width = math.max(1, math.min(w - border_size, columns - x - border_size)),
+      height = math.max(1, math.min(h - border_size, rows - y - border_size)),
+      border = border_size == 2 and "rounded" or "none",
+      title = border_size == 2 and " " .. title .. " " or nil,
+      title_pos = border_size == 2 and "center" or nil,
+      footer = border_size == 2 and footer or nil,
+      footer_pos = border_size == 2 and "center" or nil,
       style = "minimal",
       zindex = 60,
       focusable = true,
@@ -112,39 +117,50 @@ function M.geometry()
 end
 
 local function with_result(configs)
-  local result = vim.tbl_extend("force", configs.original, {
-    row = configs.staged.row,
-    height = configs.staged.height,
-    width = configs.original.width + configs.modified.width + 2,
-    title = " Result ",
-    footer = " h help ",
-  })
   configs.original.height = configs.unstaged.height
   configs.modified.height = configs.unstaged.height
-  configs.result = result
+  configs.original.title, configs.modified.title = " Incoming (:3) ", " Current (:2) "
+  configs.original.footer, configs.modified.footer = " g? help ", " g? help "
+  configs.base = vim.tbl_extend("force", configs.original, {
+    row = configs.staged.row, height = configs.staged.height, title = " Base (:1) ", footer = " g? help ",
+  })
+  configs.result = vim.tbl_extend("force", configs.modified, {
+    row = configs.staged.row, height = configs.staged.height, title = " Result ", footer = " g? help ",
+  })
+  for _, cfg in pairs(configs) do
+    if cfg.border == "none" then cfg.title, cfg.title_pos, cfg.footer, cfg.footer_pos = nil, nil, nil, nil end
+  end
   return configs
 end
 
 function M.open_result(session)
-  if session.result_win and vim.api.nvim_win_is_valid(session.result_win) then
-    return
+  local root = session.panel and session.panel.view
+  sync_chrome()
+  local configs = with_result(M.geometry(root and root.is_hidden, true))
+  if not session.base_win or not vim.api.nvim_win_is_valid(session.base_win) then
+    session.base_win = vim.api.nvim_open_win(session.base_bufnr, false, configs.base)
   end
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[buf].bufhidden = "wipe"
-  local win = vim.api.nvim_open_win(buf, false, with_result(M.geometry()).result)
-  require("codediff.ui.lifecycle").set_result(session.tabpage, buf, win)
+  if not session.result_win or not vim.api.nvim_win_is_valid(session.result_win) then
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[buf].bufhidden = "wipe"
+    local win = vim.api.nvim_open_win(buf, false, configs.result)
+    require("codediff.ui.lifecycle").set_result(session.tabpage, buf, win)
+  end
 end
 
 function M.arrange(session)
-  local configs = M.geometry()
+  require("codediff.ui.conflict.view.result").restore_maximize(session)
+  local root = session.panel and session.panel.view
+  if session.merge then sync_chrome() end
+  local configs = M.geometry(root and root.is_hidden, session.merge)
   if session.result_win and vim.api.nvim_win_is_valid(session.result_win) then
     with_result(configs)
   end
-  for _, side in ipairs({ "original", "modified", "result" }) do
+  for _, side in ipairs({ "original", "modified", "base", "result" }) do
     local win = session[side .. "_win"]
     if win and vim.api.nvim_win_is_valid(win) and configs[side] then
       vim.api.nvim_win_set_config(win, configs[side])
-      if side == "result" then
+      if side == "result" or side == "base" then
         vim.wo[win].number = true
         vim.wo[win].relativenumber = false
       else
@@ -152,7 +168,7 @@ function M.arrange(session)
       end
     end
   end
-  local root = session.panel and session.panel.view
+  if session.base_win then require("codediff.ui.conflict.view.result").update_labels(session) end
   if root and not root.is_hidden then
     for _, pane in ipairs(root.panes or { root }) do
       local cfg = configs[pane.group or "unstaged"]
@@ -186,7 +202,8 @@ function M.close(session)
     popup.dialog.close()
   end
   local root = session.panel and session.panel.view
-  local windows = { session.original_win, session.modified_win, session.result_win }
+  require("codediff.ui.conflict.view.result").restore_maximize(session)
+  local windows = { session.original_win, session.modified_win, session.result_win, session.base_win }
   if root then
     root.is_hidden = true
     for _, pane in ipairs(root.panes or { root }) do

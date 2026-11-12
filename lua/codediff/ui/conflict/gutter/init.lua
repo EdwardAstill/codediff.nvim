@@ -34,6 +34,9 @@ local function compute_projection(bufnr, range, filler_counts, highlight)
   end
 
   local positions = compute.visual_positions(normalized, filler_counts)
+  if #positions == 0 and normalized.start_line == normalized.end_line then
+    positions = { { line = math.min(normalized.start_line, vim.api.nvim_buf_line_count(bufnr)), offset = 0 } }
+  end
   if #positions == 0 then
     return nil
   end
@@ -60,25 +63,9 @@ local function accepted_highlights(session, block)
   return "CodeDiffConflictSignResolved", "CodeDiffConflictSignResolved", "CodeDiffConflictSignResolved"
 end
 
-local function tracking_needs_reinit(session)
-  for _, block in ipairs(session.conflict_blocks) do
-    if not block.extmark_id then
-      return true
-    end
-    local mark = vim.api.nvim_buf_get_extmark_by_id(session.result_bufnr, tracking.tracking_ns, block.extmark_id, { details = true })
-    if not mark or #mark < 3 or not mark[3] then
-      return true
-    end
-    local expected_range = block.result_range or block.base_range
-    if mark[1] == 0 and expected_range.start_line - 1 > 0 then
-      return true
-    end
-  end
-  return false
-end
 
 local function clear_markers(session, namespace)
-  for _, bufnr in ipairs({ session.original_bufnr, session.modified_bufnr }) do
+  for _, bufnr in ipairs({ session.original_bufnr, session.modified_bufnr, session.base_bufnr }) do
     if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
       vim.api.nvim_buf_clear_namespace(bufnr, namespace, 0, -1)
     end
@@ -97,18 +84,18 @@ function M.refresh(session)
   local highlights = require("codediff.ui.highlights")
   local ns_conflict = highlights.ns_conflict
 
-  if tracking_needs_reinit(session) and session.result_bufnr and vim.api.nvim_buf_is_valid(session.result_bufnr) then
-    tracking.initialize_tracking(session.result_bufnr, session.conflict_blocks)
-  end
+  tracking.sync(session)
 
   clear_markers(session, ns_conflict)
 
   local original_counts = filler.get_virt_line_counts(session.original_bufnr)
   local modified_counts = filler.get_virt_line_counts(session.modified_bufnr)
   local result_counts = filler.get_virt_line_counts(session.result_bufnr)
+  local base_counts = session.base_bufnr and filler.get_virt_line_counts(session.base_bufnr) or {}
   local original_projections = {}
   local modified_projections = {}
   local result_projections = {}
+  local base_projections = {}
 
   for _, block in ipairs(session.conflict_blocks) do
     local left_highlight, right_highlight, result_highlight = accepted_highlights(session, block)
@@ -121,6 +108,13 @@ function M.refresh(session)
     local modified = compute_projection(session.modified_bufnr, block.output2_range, modified_counts, right_highlight)
     if modified then
       modified_projections[#modified_projections + 1] = modified
+    end
+    local base_highlight = tracking.is_block_active(session, block) and "CodeDiffConflictSign"
+      or tracking.get_accepted_side(session, block) == "base" and "CodeDiffConflictSignAccepted"
+      or "CodeDiffConflictSignResolved"
+    local base = compute_projection(session.base_bufnr, block.base_range, base_counts, base_highlight)
+    if base then
+      base_projections[#base_projections + 1] = base
     end
 
     if session.result_bufnr and vim.api.nvim_buf_is_valid(session.result_bufnr) and block.extmark_id then
@@ -137,14 +131,20 @@ function M.refresh(session)
   signcolumn.render(session.original_bufnr, original_projections, ns_conflict)
   signcolumn.render(session.modified_bufnr, modified_projections, ns_conflict)
   signcolumn.render(session.result_bufnr, result_projections, tracking.result_signs_ns)
+  signcolumn.render(session.base_bufnr, base_projections, ns_conflict)
   statuscolumn.update(session.original_win, original_projections, original_counts)
   statuscolumn.update(session.modified_win, modified_projections, modified_counts)
+  statuscolumn.update(session.base_win, base_projections, base_counts)
+  statuscolumn.update(session.result_win, result_projections, result_counts)
+  require("codediff.ui.conflict.view.result").update_labels(session)
 end
 
---- Attach gutter rendering to the two conflict input windows.
-function M.attach(original_win, modified_win)
+--- Attach gutter rendering to every merge pane.
+function M.attach(original_win, modified_win, base_win, result_win)
   statuscolumn.attach(original_win)
   statuscolumn.attach(modified_win)
+  statuscolumn.attach(base_win)
+  statuscolumn.attach(result_win)
 end
 
 --- Detach gutter rendering from one conflict input window.
@@ -159,6 +159,8 @@ function M.teardown(tabpage)
     clear_markers(session, require("codediff.ui.highlights").ns_conflict)
     M.detach(session.original_win)
     M.detach(session.modified_win)
+    M.detach(session.base_win)
+    M.detach(session.result_win)
   end
   pcall(vim.api.nvim_del_augroup_by_name, "CodeDiffConflictGutter_" .. tabpage)
 end
@@ -177,6 +179,16 @@ function M.setup_refresh_autocmd(tabpage, result_bufnr)
     callback = function()
       local session = lifecycle.get_session(tabpage)
       if session and not session.suspended and session.result_bufnr == result_bufnr then
+        M.refresh(session)
+      end
+    end,
+  })
+  vim.api.nvim_create_autocmd("User", {
+    group = group,
+    pattern = "CodeDiffConflictChanged",
+    callback = function(args)
+      local session = lifecycle.get_session(tabpage)
+      if session and not session.suspended and session.result_bufnr == result_bufnr and args.data.bufnr == result_bufnr then
         M.refresh(session)
       end
     end,
