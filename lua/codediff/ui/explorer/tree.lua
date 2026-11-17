@@ -159,23 +159,10 @@ end
 
 function M.get_all_files(tree)
   local files = {}
-  local function collect(parent)
-    if not parent:is_expanded() then
-      return
+  for _, node in ipairs(tree:get_visible_nodes()) do
+    if node.data and not node.data.type then
+      files[#files + 1] = { node = node, data = node.data }
     end
-    for _, id in ipairs(parent:get_child_ids() or {}) do
-      local node = tree:get_node(id)
-      if node and node.data then
-        if node.data.type == "directory" then
-          collect(node)
-        elseif not node.data.type then
-          files[#files + 1] = { node = node, data = node.data }
-        end
-      end
-    end
-  end
-  for _, node in ipairs(tree:get_nodes()) do
-    collect(node)
   end
   return files
 end

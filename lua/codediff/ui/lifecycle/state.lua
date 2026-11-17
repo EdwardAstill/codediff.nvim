@@ -42,18 +42,6 @@ function M.clear_buffer_highlights(bufnr)
   require("codediff.ui.gutter_signs").clear_buffer(bufnr)
 end
 
-function M.get_file_mtime(bufnr)
-  if not vim.api.nvim_buf_is_valid(bufnr) then
-    return nil
-  end
-  local name = vim.api.nvim_buf_get_name(bufnr)
-  if name == "" or name:match("^codediff://") then
-    return nil
-  end
-  local stat = (vim.uv or vim.loop).fs_stat(name)
-  return stat and stat.mtime.sec or nil
-end
-
 function M.suspend_diff(tabpage)
   local session = require("codediff.ui.lifecycle").get_session(tabpage)
   if not session or session.suspended then

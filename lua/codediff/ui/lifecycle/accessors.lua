@@ -281,32 +281,6 @@ function M.update_diff_result(tabpage, diff_lines)
   return true
 end
 
---- Update changedtick
-function M.update_changedtick(tabpage, original_tick, modified_tick)
-  local active_diffs = get_active_diffs()
-  local sess = active_diffs[tabpage]
-  if not sess then
-    return false
-  end
-
-  sess.changedtick.original = original_tick
-  sess.changedtick.modified = modified_tick
-  return true
-end
-
---- Update mtime
-function M.update_mtime(tabpage, original_mtime, modified_mtime)
-  local active_diffs = get_active_diffs()
-  local sess = active_diffs[tabpage]
-  if not sess then
-    return false
-  end
-
-  sess.mtime.original = original_mtime
-  sess.mtime.modified = modified_mtime
-  return true
-end
-
 --- Update path refs (for file switching/sync)
 ---@param original Path
 ---@param modified Path

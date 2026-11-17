@@ -27,8 +27,6 @@ local keymap = require("codediff.keymap")
 --     single_side = "original" | "modified" | nil,
 --     stored_diff_result = table,
 --     compact_mode = boolean, -- session preference; folds may be inactive with no hunks
---     changedtick = { original = number, modified = number },
---     mtime = { original = number?, modified = number? },
 --     -- Merge source snapshots and editable working-file result
 --     base_bufnr = number?, base_win = number?,
 --     result_bufnr = number?,
@@ -112,14 +110,6 @@ function M.create_session(tabpage, session_config, panes)
     single_side = nil,
     stored_diff_result = panes.lines_diff,
     compact_mode = config.options.diff.compact,
-    changedtick = {
-      original = vim.api.nvim_buf_get_changedtick(original_bufnr),
-      modified = vim.api.nvim_buf_get_changedtick(modified_bufnr),
-    },
-    mtime = {
-      original = state.get_file_mtime(original_bufnr),
-      modified = state.get_file_mtime(modified_bufnr),
-    },
 
     -- Four-pane merge view
     base_bufnr = nil,

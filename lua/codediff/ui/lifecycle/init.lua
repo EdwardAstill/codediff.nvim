@@ -1,11 +1,5 @@
 -- Lifecycle management for diff views
 -- Handles tracking, cleanup, and state restoration
---
--- STATE MODEL (Consolidated):
--- - Single source of truth for all diff sessions
--- - Immutable: mode, git_root, bufnr, win, revisions
--- - Mutable: suspended, stored_diff_result, changedtick, mtime, paths
--- - Access: Only through getters/setters
 local M = {}
 
 -- Import submodules
@@ -56,8 +50,6 @@ M.update_suspended = accessors.update_suspended
 M.update_layout = accessors.update_layout
 M.update_merge = accessors.update_merge
 M.update_diff_result = accessors.update_diff_result
-M.update_changedtick = accessors.update_changedtick
-M.update_mtime = accessors.update_mtime
 M.update_paths = accessors.update_paths
 M.update_buffers = accessors.update_buffers
 M.update_git_root = accessors.update_git_root

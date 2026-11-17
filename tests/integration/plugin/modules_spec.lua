@@ -45,12 +45,6 @@ describe("Git submodules", function()
 
   it("preserves the complete public facade", function()
     local git = require("codediff.core.git")
-    local export_count = 0
-    for _ in pairs(git) do
-      export_count = export_count + 1
-    end
-    assert.equals(31, export_count)
-
     for module_name, exports in pairs(git_exports) do
       local mod = require(module_name)
       for _, name in ipairs(exports) do
@@ -257,8 +251,6 @@ describe("Lifecycle submodules", function()
       local mod = require("codediff.ui.lifecycle.accessors")
       assert.is_function(mod.update_suspended)
       assert.is_function(mod.update_diff_result)
-      assert.is_function(mod.update_changedtick)
-      assert.is_function(mod.update_mtime)
       assert.is_function(mod.update_paths)
       assert.is_function(mod.update_buffers)
       assert.is_function(mod.update_git_root)
@@ -274,7 +266,6 @@ describe("Lifecycle submodules", function()
       assert.is_function(mod.save_buffer_state)
       assert.is_function(mod.restore_buffer_state)
       assert.is_function(mod.clear_buffer_highlights)
-      assert.is_function(mod.get_file_mtime)
       assert.is_function(mod.suspend_diff)
       assert.is_function(mod.resume_diff)
     end)

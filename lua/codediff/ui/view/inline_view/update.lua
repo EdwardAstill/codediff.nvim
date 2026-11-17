@@ -96,7 +96,6 @@ local function commit_update(tabpage, session_config, orig_buf, mod_buf, lines_d
   lifecycle.update_git_root(tabpage, session_config.git_root)
   lifecycle.update_revisions(tabpage, session_config.original_revision, session_config.modified_revision)
   lifecycle.update_diff_result(tabpage, lines_diff)
-  lifecycle.update_changedtick(tabpage, vim.api.nvim_buf_get_changedtick(orig_buf), vim.api.nvim_buf_get_changedtick(mod_buf))
   lifecycle.update_paths(tabpage, session_config.original, session_config.modified)
 
   setup_keymaps(tabpage, orig_buf, mod_buf)

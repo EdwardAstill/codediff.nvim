@@ -223,13 +223,8 @@ function Tree:get_node(arg)
   end
 end
 
---- Render tree to buffer
-function Tree:render()
-  if not self._bufnr or not vim.api.nvim_buf_is_valid(self._bufnr) then
-    return
-  end
-
-  -- Collect visible nodes via depth-first traversal
+--- Get visible nodes in depth-first order
+function Tree:get_visible_nodes()
   local visible_nodes = {}
   local function collect(nodes)
     for _, node in ipairs(nodes) do
@@ -240,6 +235,16 @@ function Tree:render()
     end
   end
   collect(self._nodes)
+  return visible_nodes
+end
+
+--- Render tree to buffer
+function Tree:render()
+  if not self._bufnr or not vim.api.nvim_buf_is_valid(self._bufnr) then
+    return
+  end
+
+  local visible_nodes = self:get_visible_nodes()
 
   -- Clear all _line values
   for _, node in pairs(self._nodes_by_id) do

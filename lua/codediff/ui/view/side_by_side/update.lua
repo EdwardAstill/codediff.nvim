@@ -251,7 +251,6 @@ function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
             lifecycle.update_git_root(tabpage, session_config.git_root)
             lifecycle.update_revisions(tabpage, session_config.original_revision, session_config.modified_revision)
             lifecycle.update_diff_result(tabpage, conflict_diffs.base_to_modified_diff)
-            lifecycle.update_changedtick(tabpage, vim.api.nvim_buf_get_changedtick(original_info.bufnr), vim.api.nvim_buf_get_changedtick(modified_info.bufnr))
             local is_explorer_mode = session.panel and session.panel.name == "explorer"
             local success = setup_conflict_result_window(tabpage, session_config, original_win, modified_win, base_lines, conflict_diffs, true)
             if success then
@@ -281,7 +280,6 @@ function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
         lifecycle.update_git_root(tabpage, session_config.git_root)
         lifecycle.update_revisions(tabpage, session_config.original_revision, session_config.modified_revision)
         lifecycle.update_diff_result(tabpage, lines_diff)
-        lifecycle.update_changedtick(tabpage, vim.api.nvim_buf_get_changedtick(original_info.bufnr), vim.api.nvim_buf_get_changedtick(modified_info.bufnr))
 
         local is_explorer_mode = session.panel and session.panel.name == "explorer"
         setup_all_keymaps(tabpage, original_info.bufnr, modified_info.bufnr, is_explorer_mode)

@@ -127,6 +127,8 @@ A missing file on one side can be a legitimate addition/deletion. Invalid or una
 
 Expand a commit, then choose its file. `--base WORKING` is different from comparing two immutable revisions. See the [history reference](../README.md#review-history) for visual line-range history and additional flags.
 
+In multi-file history, `]f` / `[f` navigate visible files in display order, including nested directories in tree mode. Files inside collapsed directories or commits are skipped. Single-file history uses these keys to navigate commits instead.
+
 ## Pull requests and merge conflicts
 
 Use `:CodeDiff pr <number>` to fetch and compare a pull request without checking out its branch. Remote/base/path filters and private-ref cleanup are documented in the [pull-request reference](../README.md#pull-requests).

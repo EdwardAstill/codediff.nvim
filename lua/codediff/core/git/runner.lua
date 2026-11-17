@@ -2,7 +2,6 @@
 local M = {}
 
 -- Run a git command asynchronously.
--- Uses vim.system if available (Neovim 0.10+), falls back to vim.loop.spawn.
 function M.run_async(args, opts, callback)
   opts = opts or {}
 
@@ -26,92 +25,23 @@ function M.run_async(args, opts, callback)
   end
   vim.list_extend(argv, args)
 
-  -- Use vim.system if available (Neovim 0.10+)
-  if vim.system then
-    -- On Windows, vim.system requires that cwd exists before running the command
-    -- Validate the directory exists to provide a better error message
-    if opts.cwd and vim.fn.isdirectory(opts.cwd) == 0 then
-      callback("Directory does not exist: " .. opts.cwd, nil)
-      return
-    end
-
-    vim.system(argv, {
-      cwd = opts.cwd,
-      text = true,
-    }, function(result)
-      if result.code == 0 then
-        callback(nil, result.stdout or "")
-      else
-        callback(result.stderr or "Git command failed", nil)
-      end
-    end)
-  else
-    -- Fallback to vim.loop.spawn for older Neovim versions
-    -- Validate the directory exists to provide a better error message
-    if opts.cwd and vim.fn.isdirectory(opts.cwd) == 0 then
-      callback("Directory does not exist: " .. opts.cwd, nil)
-      return
-    end
-
-    local stdout_data = {}
-    local stderr_data = {}
-
-    local handle
-    local stdout = vim.loop.new_pipe(false)
-    local stderr = vim.loop.new_pipe(false)
-
-    ---@diagnostic disable-next-line: missing-fields
-    handle = vim.loop.spawn("git", {
-      -- `argv` already carries `--no-optional-locks` when requested; `spawn`
-      -- takes the arguments *after* argv[0], so drop the leading "git".
-      args = vim.list_slice(argv, 2, #argv),
-      cwd = opts.cwd,
-      stdio = { nil, stdout, stderr },
-    }, function(code)
-      if stdout then
-        stdout:close()
-      end
-      if stderr then
-        stderr:close()
-      end
-      if handle then
-        handle:close()
-      end
-
-      vim.schedule(function()
-        if code == 0 then
-          callback(nil, table.concat(stdout_data))
-        else
-          callback(table.concat(stderr_data) or "Git command failed", nil)
-        end
-      end)
-    end)
-
-    if not handle then
-      callback("Failed to spawn git process", nil)
-      return
-    end
-
-    if stdout then
-      stdout:read_start(function(err, data)
-        if err then
-          callback(err, nil)
-        elseif data then
-          table.insert(stdout_data, data)
-        end
-      end)
-    end
-
-    if stderr then
-      stderr:read_start(function(err, data)
-        if err then
-          callback(err, nil)
-        elseif data then
-          table.insert(stderr_data, data)
-        end
-      end)
-    end
+  -- On Windows, vim.system requires that cwd exists before running the command
+  -- Validate the directory exists to provide a better error message
+  if opts.cwd and vim.fn.isdirectory(opts.cwd) == 0 then
+    callback("Directory does not exist: " .. opts.cwd, nil)
+    return
   end
+
+  vim.system(argv, {
+    cwd = opts.cwd,
+    text = true,
+  }, function(result)
+    if result.code == 0 then
+      callback(nil, result.stdout or "")
+    else
+      callback(result.stderr or "Git command failed", nil)
+    end
+  end)
 end
 
 -- Run a git command synchronously.

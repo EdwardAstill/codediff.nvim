@@ -56,16 +56,6 @@ function M.build_tree_nodes(commits, git_root, opts)
   return result
 end
 
-local function expand_directories(tree, ids)
-  for _, id in ipairs(ids) do
-    local node = tree:get_node(id)
-    if node and node.data and node.data.type == "directory" then
-      node:expand()
-      expand_directories(tree, node:get_child_ids() or {})
-    end
-  end
-end
-
 local function find_first_file(tree, ids)
   for _, id in ipairs(ids) do
     local node = tree:get_node(id)
@@ -100,7 +90,7 @@ local function render_files(history, node)
   end
   node.data.files_loaded, node.data.file_count = true, #files
   if tree_mode then
-    expand_directories(tree, node:get_child_ids() or {})
+    node:expand_recursively()
   end
 end
 
@@ -240,14 +230,9 @@ end
 
 function M.get_all_files(tree)
   local files = {}
-  for _, commit in ipairs(tree:get_nodes()) do
-    if commit:is_expanded() then
-      for _, id in ipairs(commit:get_child_ids() or {}) do
-        local node = tree:get_node(id)
-        if node and node.data and node.data.type == "file" then
-          files[#files + 1] = { node = node, data = node.data }
-        end
-      end
+  for _, node in ipairs(tree:get_visible_nodes()) do
+    if node.data and node.data.type == "file" then
+      files[#files + 1] = { node = node, data = node.data }
     end
   end
   return files

@@ -228,8 +228,6 @@ function M.update(session, data, changes)
     else
       session.stored_diff_result = assert(M.render_diff(session.original_bufnr, session.modified_bufnr, data.original, data.modified, session.layout))
     end
-    session.changedtick.original = api.nvim_buf_get_changedtick(session.original_bufnr)
-    session.changedtick.modified = api.nvim_buf_get_changedtick(session.modified_bufnr)
     if old_original ~= session.original_bufnr or old_modified ~= session.modified_bufnr then
       if session.reapply_keymaps then
         session.reapply_keymaps()
