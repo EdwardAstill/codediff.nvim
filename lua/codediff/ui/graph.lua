@@ -6,6 +6,17 @@ local runner = require("codediff.core.git.runner")
 local actions = require("codediff.ui.view.actions.repository")
 
 local PAGE_SIZE = 200
+local graph_ns = vim.api.nvim_create_namespace("codediff-graph")
+
+-- Replace ASCII graph characters with cleaner Unicode box-drawing equivalents.
+-- Every replacement is 1 column wide so column alignment stays correct.
+local GRAPH_CHAR = setmetatable({ ["|"] = "│", ["*"] = "●", ["/"] = "╱", ["\\"] = "╲", ["_"] = "─", ["."] = "·" },
+  { __index = function(_, c) return c end })
+local GRAPH_PATTERN = "[" .. ("|*_./\\"):gsub(".", function(c) return "%" .. c end) .. "]"
+
+local function enhance_edges(s)
+  return s:gsub(GRAPH_PATTERN, GRAPH_CHAR)
+end
 
 function M.open(ctx)
   local session = lifecycle.get_session(ctx.tabpage)
@@ -33,6 +44,13 @@ function M.open(ctx)
     vim.bo[handle.bufnr].modifiable = true
     vim.api.nvim_buf_set_lines(handle.bufnr, 0, -1, false, lines)
     vim.bo[handle.bufnr].modifiable = false
+    vim.api.nvim_buf_clear_namespace(handle.bufnr, graph_ns, 0, -1)
+    for i, line in ipairs(lines) do
+      local first_char = line:find("[^ │●╱╲─·|%*/\\_%.%-]")
+      if first_char then
+        vim.api.nvim_buf_set_extmark(handle.bufnr, graph_ns, i - 1, 0, { end_col = first_char - 1, hl_group = "Comment" })
+      end
+    end
     local config = vim.api.nvim_win_get_config(handle.winid)
     config.height = math.max(1, math.min(math.max(4, #lines), vim.o.lines - vim.o.cmdheight - 4))
     config.row = math.max(0, math.floor((vim.o.lines - vim.o.cmdheight - config.height - 2) / 2))
@@ -82,11 +100,11 @@ function M.open(ctx)
               count = count + 1
               if count > limit then more = true; break end
               local name = short .. decoration .. " " .. subject
-              lines[#lines + 1] = edges .. vim.fn.strtrans(name)
+              lines[#lines + 1] = enhance_edges(edges) .. vim.fn.strtrans(name)
               entries[#lines] = { oid = oid, name = name }
               if selected and selected.oid == oid then selected_row = #lines end
             elseif not line:find("\0", 1, true) then
-              lines[#lines + 1] = line
+              lines[#lines + 1] = enhance_edges(line)
             end
           end
           if count == 0 then lines[#lines + 1] = "No commits yet (unborn history)." end

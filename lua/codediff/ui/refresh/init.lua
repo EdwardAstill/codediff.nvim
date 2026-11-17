@@ -531,6 +531,12 @@ vim.api.nvim_create_autocmd("User", {
     for _, session in pairs(require("codediff.ui.lifecycle.session").get_active_diffs()) do
       local panel = session.panel
       if panel and panel.name == "explorer" and session.git_root then
+        for _, file in ipairs(panel.data.status_result.unstaged or {}) do
+          if file.resolved_conflict and vim.fs.joinpath(session.git_root, file.path) == path then
+            M.request(session.tabpage, { full = true })
+            break
+          end
+        end
         for _, file in ipairs(panel.data.status_result.conflicts or {}) do
           if vim.fs.joinpath(session.git_root, file.path) == path then
             notify_panel(panel, { list = true })

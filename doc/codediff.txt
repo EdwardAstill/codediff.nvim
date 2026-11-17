@@ -496,8 +496,26 @@ Result edits survive file switches and reopening, so a previously edited file
 may retain conflict markers rather than being regenerated. Approvals survive
 only while its buffer remains loaded, not buffer deletion or Neovim restarts.
 
-Conflict defaults below use keymaps.conflict. Shared quit/help/file navigation
-and tree focus/visibility use keymaps.view; Tab, Shift-Tab, and CTRL-Q are fixed.
+Popup workflow (plain :CodeDiff):
+  Incoming/Current <CR>  Accept the focused change
+  Incoming/Current b     Take both versions, focused source first
+  Result Normal <CR>    Approve the manually edited block
+  u / CTRL-R            Undo / redo Result and approvals
+  ]x / [x               Next / previous unresolved conflict (configurable)
+  Tab / Shift-Tab       Next / previous pane
+  Conflict tree r       Resolve/save the reviewed file WITHOUT staging
+  Changes tree s        Stage the resolved file
+  g                     Graph: c continues / a aborts (confirmation required)
+
+Tree r requires every block to be explicitly accepted or marked resolved.
+It validates current merge inputs, saves Result, and moves the file to Changes;
+it never silently accepts unreviewed Base text. Git's index remains unmerged
+until s stages the file. Use g? or :CodeDiff help for the short popup guide.
+
+Additional configurable actions remain available, including in native merge
+tabs. Conflict defaults below use keymaps.conflict. Shared quit/help/file
+navigation and tree focus/visibility use keymaps.view; Tab, Shift-Tab, and
+CTRL-Q are fixed. Native help reflects your configured bindings.
   ]x / [x          Next / previous unresolved conflict; align every pane
   <leader>ct / <leader>co  Take Incoming / Current
   <leader>cb / <leader>cR  Both: Current then Incoming / Incoming then Current
@@ -518,15 +536,17 @@ q / CTRL-Q to close.
 Result uses ordinary Neovim editing even inside the popup: i inserts, h/j/k/l
 move normally, and s is not staging. Popup trees retain their fixed controls,
 including s to stage and h for help. Manual edits do not resolve conflicts:
-use Mark Resolved. Editing an approved block invalidates approval. Use Base
+inspect them, then use Normal-mode Enter in popup Result or Mark Resolved.
+Editing an approved block invalidates approval. Use Base
 resolves; Reset does not. Per-block choices can replace an earlier choice;
 Take All skips approved blocks. Reset All resets every block while keeping
 automatic non-conflicting edits. Both retains complete alternatives in order.
 
-Write Result with :write, then stage the whole file with - (or s in a popup
-tree). CodeDiff refuses file/folder/all staging for affected unopened,
-unresolved, unsaved, or stale-input conflicts. Hunk operations cannot bypass
-this guard. External git add does bypass it.
+In a popup, review every block, use tree r to resolve/save, then s in Changes
+to stage. In native merge tabs, :write Result, then - stages the whole file.
+CodeDiff refuses file/folder/all staging for affected unopened, unresolved,
+unsaved, or stale-input conflicts. Hunk operations cannot bypass this guard.
+External git add does bypass it.
 Tree rows show unresolved counts or "needs review" for unknown/stale inputs.
 After resolving, saving, and staging every conflict in a popup, press g, then c
 and confirm to continue the pending merge/rebase. A rebase can pause again at

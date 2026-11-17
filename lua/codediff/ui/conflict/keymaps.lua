@@ -105,6 +105,23 @@ function M.setup_keymaps(tabpage)
           end, vim.tbl_extend("force", base_opts, { desc = undo[3] }))
         end
       end
+
+      if session.popup then
+        local accept = bufnr == session.original_bufnr and resolution.accept_incoming
+          or bufnr == session.modified_bufnr and resolution.accept_current
+          or bufnr == session.result_bufnr and resolution.mark_resolved
+        if accept then
+          lifecycle.set_buf_keymap(tabpage, bufnr, "n", "<CR>", tracking.make_repeatable(function()
+            accept(tabpage)
+          end), vim.tbl_extend("force", base_opts, { expr = true, desc = bufnr == session.result_bufnr and "Approve manual edit" or "Accept focused change" }))
+        end
+        if bufnr == session.original_bufnr or bufnr == session.modified_bufnr then
+          local both = bufnr == session.original_bufnr and resolution.accept_both_reverse or resolution.accept_both
+          lifecycle.set_buf_keymap(tabpage, bufnr, "n", "b", tracking.make_repeatable(function()
+            both(tabpage)
+          end), vim.tbl_extend("force", base_opts, { expr = true, desc = "Take both, focused source first" }))
+        end
+      end
     end
   end
 

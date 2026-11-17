@@ -84,6 +84,84 @@ describe("merge view keymap ownership", function()
     return lifecycle.get_session(tabpage)
   end
 
+  local function setup_popup_keymaps(session)
+    session.popup = require("codediff.ui.popup").capture()
+    require("codediff.ui.conflict").setup_keymaps(session.tabpage)
+    session.popup = nil
+  end
+
+  it("accepts the focused popup source with Enter and undoes without changing that source", function()
+    local session = open_merge_view()
+    setup_popup_keymaps(session)
+    local tracking = require("codediff.ui.conflict.tracking")
+    for _, source in ipairs({ { session.original_win, "line 3 (feature)" }, { session.modified_win, "line 3 (main)" } }) do
+      vim.api.nvim_set_current_win(source[1])
+      vim.api.nvim_win_set_cursor(source[1], { 3, 0 })
+      local bufnr = vim.api.nvim_get_current_buf()
+      local before = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      vim.api.nvim_feedkeys("\r", "xt", false)
+      assert.same({ "line 1", "line 2", source[2], "line 4" }, vim.api.nvim_buf_get_lines(session.result_bufnr, 0, -1, false))
+      assert.equals(0, tracking.unresolved_count(session))
+      vim.api.nvim_feedkeys("u", "xt", false)
+      assert.same({ "line 1", "line 2", "line 3", "line 4" }, vim.api.nvim_buf_get_lines(session.result_bufnr, 0, -1, false))
+      assert.equals(1, tracking.unresolved_count(session))
+      assert.same(before, vim.api.nvim_buf_get_lines(bufnr, 0, -1, false))
+      assert.equals(source[1], vim.api.nvim_get_current_win())
+    end
+  end)
+
+  it("puts the focused source first with b and preserves Result word movement", function()
+    local session = open_merge_view()
+    setup_popup_keymaps(session)
+    assert.equals("NONE", effective(session.result_bufnr, "b"))
+    assert.equals("NONE", effective(session.result_bufnr, "B"))
+    for _, win in ipairs({ session.original_win, session.modified_win }) do
+      vim.api.nvim_set_current_win(win)
+      vim.api.nvim_win_set_cursor(win, { 3, 0 })
+      assert.equals("NONE", effective(vim.api.nvim_win_get_buf(win), "B"))
+      vim.api.nvim_feedkeys("b", "xt", false)
+      local first = win == session.original_win and "line 3 (feature)" or "line 3 (main)"
+      local second = win == session.original_win and "line 3 (main)" or "line 3 (feature)"
+      assert.same({ "line 1", "line 2", first, second, "line 4" }, vim.api.nvim_buf_get_lines(session.result_bufnr, 0, -1, false))
+      vim.api.nvim_feedkeys("u", "xt", false)
+      assert.equals(1, require("codediff.ui.conflict.tracking").unresolved_count(session))
+    end
+  end)
+
+  it("approves manual Result edits only with normal-mode Enter", function()
+    local session = open_merge_view()
+    setup_popup_keymaps(session)
+    local tracking = require("codediff.ui.conflict.tracking")
+    vim.api.nvim_set_current_win(session.result_win)
+    vim.api.nvim_win_set_cursor(session.result_win, { 3, 0 })
+    vim.api.nvim_feedkeys("ccmanual result\27", "xt", false)
+    assert.equals(1, tracking.unresolved_count(session))
+    local insert_enter = vim.fn.maparg("<CR>", "i", false, true)
+    assert.is_true(next(insert_enter) == nil or insert_enter.buffer ~= 1, "popup must not claim insert Enter")
+    vim.api.nvim_feedkeys("\r", "xt", false)
+    assert.same({ "line 1", "line 2", "manual result", "line 4" }, vim.api.nvim_buf_get_lines(session.result_bufnr, 0, -1, false))
+    assert.equals(0, tracking.unresolved_count(session))
+    vim.api.nvim_feedkeys("u", "xt", false)
+    assert.equals(1, tracking.unresolved_count(session))
+  end)
+
+  it("restores popup shortcut ownership without claiming native Enter or Base Enter", function()
+    local session = open_merge_view()
+    local lifecycle = require("codediff.ui.lifecycle")
+    assert.equals("NONE", effective(session.original_bufnr, "<CR>"))
+    local calls = 0
+    vim.keymap.set("n", "<CR>", function() calls = calls + 1 end, { buffer = session.original_bufnr, desc = "USER ENTER" })
+    setup_popup_keymaps(session)
+    assert.equals("NONE", effective(session.base_bufnr, "<CR>"))
+    lifecycle.release_keymap_scope(session.tabpage, "conflict")
+    assert.equals("USER ENTER [buf]", effective(session.original_bufnr, "<CR>"))
+    assert.equals("NONE", effective(session.original_bufnr, "b"))
+    assert.equals("NONE", effective(session.original_bufnr, "B"))
+    vim.api.nvim_set_current_win(session.original_win)
+    vim.api.nvim_feedkeys("\r", "xt", false)
+    assert.equals(1, calls)
+  end)
+
   it("leaves do and dp to the user instead of claiming them", function()
     -- A mapping the user already had. codediff must not delete or shadow it.
     vim.keymap.set("n", "do", function() end, { desc = "USER MAPPING" })

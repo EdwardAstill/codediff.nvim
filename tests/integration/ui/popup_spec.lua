@@ -380,7 +380,6 @@ describe("Status popup workspace", function()
       assert.equals("", vim.wo[win].winbar)
       assert.is_not_nil(cfg.title)
       local footer = cfg.footer[1][1]
-      assert.is_truthy(footer:find("g?", 1, true))
       assert.is_nil(footer:find("stage", 1, true))
       assert.is_nil(footer:find("revert", 1, true))
     end

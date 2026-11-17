@@ -87,17 +87,7 @@ local function build_sections(keymaps, is_bound, shape)
     }, is_bound)
   )
 
-  if shape.popup then
-    table.insert(sections, section("CHANGE TREES", {
-      { { "i", "k", "<Up>", "<Down>" }, "Move up / down" },
-      { { "<CR>", MOUSE_SELECT }, "Select file / toggle folder" },
-      { { "j", "l" }, "Collapse / expand folder or select file" },
-      { "s", "Stage / unstage selected file or folder" },
-      { "S", "Stage all files" },
-      { "U", "Unstage all files" },
-      { { "h", "<C-s>", "<C-S-s>" }, "Merge help (tree only)" },
-    }, is_bound))
-  elseif shape.explorer then
+  if shape.explorer then
     local ekm = keymaps.explorer
     table.insert(
       sections,
@@ -327,9 +317,31 @@ local function toggle_review_help(tabpage, session)
     } },
   }
   if session and session.merge then
-    sections = build_sections(resolve.all_keymaps(), function(key)
+    local ckm = resolve.keymaps_for("conflict")
+    local function is_bound(key)
       return lifecycle.owns_keymap(tabpage, key)
-    end, { conflict = true, popup = true })
+    end
+    sections = {
+      section("MERGE RESOLVER", {
+        { "<CR>", "Incoming / Current: accept focused change" },
+        { "<CR>", "Result (Normal): approve manual block" },
+        { "b", "Take both: focused source first" },
+        { { "u", "<C-r>" }, "Undo / redo Result and approvals" },
+        { { "<Tab>", "<S-Tab>" }, "Next / previous pane" },
+        { ckm.next_conflict, "Next unresolved conflict" },
+        { ckm.prev_conflict, "Previous unresolved conflict" },
+        { "g", "Graph: c continue / a abort (confirm)" },
+        { "<C-q>", "Close merge workspace" },
+      }, is_bound),
+      section("CHANGE TREES", {
+        { { "i", "k", "<Up>", "<Down>" }, "Move up / down" },
+        { { "<CR>", MOUSE_SELECT }, "Select file / toggle folder" },
+        { { "j", "l" }, "Collapse / expand folder or select file" },
+        { "r", "Resolve / save reviewed file (no staging)" },
+        { "s", "Changes: stage file; Staged: unstage" },
+        { "h", "Show merge help" },
+      }, is_bound),
+    }
   end
   local width, key_width = compute_width(sections)
   local lines, hls = render_group(sections, math.min(width, 88), key_width)
@@ -337,7 +349,9 @@ local function toggle_review_help(tabpage, session)
     vim.list_extend(lines, {
       "",
       " Only Result is editable. Use normal Neovim editing keys.",
-      " Manual edits need Mark Resolved; save Result before staging.",
+      " Review every block before tree r; it never accepts Base for you.",
+      " r checks merge inputs, saves Result, and moves it to Changes.",
+      " Git stays unmerged until you stage with s in Changes.",
       " g opens the graph: c continues or a aborts a paused merge/rebase.",
     })
   else
@@ -348,7 +362,7 @@ local function toggle_review_help(tabpage, session)
       " Graph: g, select a branch/commit, then m merge or r rebase.",
       " Confirm the direction with y; n cancels. Rebase rewrites history.",
       " Both refuse dirty tracked changes and unsaved repo buffers.",
-      " Conflicts open the resolver; save/stage, then g and c to continue.",
+      " Conflicts: accept blocks, tree r to resolve/save, s to stage; g then c.",
     })
   end
   setup_highlights()

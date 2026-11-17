@@ -69,15 +69,6 @@ function M.refresh_selection(tabpage)
   end
   M.clear_selection(tabpage)
   if session.merge then
-    for _, side in ipairs({ "original", "modified", "base", "result" }) do
-      local win = session[side .. "_win"]
-      if win and vim.api.nvim_win_is_valid(win) then
-        local cfg = vim.api.nvim_win_get_config(win)
-        if cfg.relative ~= "" and cfg.border and #cfg.border > 0 then
-          vim.api.nvim_win_set_config(win, { footer = " Enter accept ", footer_pos = "center" })
-        end
-      end
-    end
     return
   end
   if session.closing or vim.api.nvim_get_current_tabpage() ~= tabpage then

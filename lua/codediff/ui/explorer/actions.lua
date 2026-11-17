@@ -326,6 +326,47 @@ function M.toggle_stage_file(git_root, file_path, group, old_path)
 end
 
 
+function M.resolve_entry(explorer, tree)
+  local node = tree:get_node()
+  local file = node and node.data
+  if not file or file.type or file.group ~= "conflicts" then return end
+  local lifecycle = require("codediff.ui.lifecycle")
+  local session = lifecycle.get_session(explorer.tabpage)
+  if not session or not session.popup or session.popup.repository_busy then return end
+  local tracking = require("codediff.ui.conflict.tracking")
+  local absolute = require("codediff.core.path").make_ref(file.path, explorer.data.git_root).absolute
+  local state = tracking.get_state(absolute)
+  if not state or tracking.unresolved_count(state) > 0 then
+    vim.notify("Accept every conflict with Enter (or approve manual edits in Result) before resolving the file.", vim.log.levels.WARN)
+    return
+  end
+  session.popup.repository_busy = true
+  git.get_unmerged(session.git_root, file.path, function(err, entries)
+    vim.schedule(function()
+      local function fail(message)
+        session.popup.repository_busy = nil
+        vim.notify(message, vim.log.levels.ERROR)
+      end
+      if lifecycle.get_session(explorer.tabpage) ~= session then session.popup.repository_busy = nil; return end
+      if err then fail(err); return end
+      local current = entries[file.path]
+      if tracking.get_state(absolute) ~= state or not current or current.identity ~= state.merge_input_identity then
+        fail("Merge inputs changed; reopen and review this conflict before resolving."); return
+      end
+      if tracking.unresolved_count(state) > 0 then fail("Resolve every conflict before saving this file."); return end
+      local ok, write_error = pcall(vim.api.nvim_buf_call, state.result_bufnr, function() vim.cmd("write") end)
+      if not ok then fail(tostring(write_error)); return end
+      require("codediff.core.git.conflicts").before_mutation(session.git_root, file.path, true, function(validation_error)
+        session.popup.repository_busy = nil
+        if validation_error then vim.notify(validation_error, vim.log.levels.ERROR); return end
+        if lifecycle.get_session(explorer.tabpage) ~= session then return end
+        state.file_resolved_tick = vim.api.nvim_buf_get_changedtick(state.result_bufnr)
+        require("codediff.ui.refresh").request(explorer.tabpage, { full = true })
+      end)
+    end)
+  end)
+end
+
 -- Stage/unstage toggle for the selected entry in explorer (file or directory)
 function M.toggle_stage_entry(explorer, tree)
   if not explorer or not explorer.data.git_root then

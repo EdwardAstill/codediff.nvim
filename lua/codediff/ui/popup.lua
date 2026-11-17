@@ -176,6 +176,9 @@ local function with_result(configs)
   configs.result = vim.tbl_extend("force", configs.modified, {
     row = configs.staged.row, height = configs.staged.height, title = " Result ",
   })
+  configs.original.footer, configs.modified.footer = " Enter accept  b both ", " Enter accept  b both "
+  configs.base.footer = " :CodeDiff help "
+  configs.result.footer = " Enter approve  :w save "
   for _, cfg in pairs(configs) do
     if cfg.border == "none" then cfg.title, cfg.title_pos, cfg.footer, cfg.footer_pos = nil, nil, nil, nil end
   end

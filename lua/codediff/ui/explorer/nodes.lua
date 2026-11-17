@@ -131,6 +131,7 @@ function M.create_file_nodes(files, git_root, group)
         group = group,
         line_stats = file.line_stats,
         merge_input_identity = file.merge_input_identity,
+        resolved_conflict = file.resolved_conflict,
       },
     })
   end
@@ -261,6 +262,7 @@ function M.create_tree_file_nodes(files, git_root, group)
             indent_state = node_indent_state,
             line_stats = file.line_stats,
             merge_input_identity = file.merge_input_identity,
+            resolved_conflict = file.resolved_conflict,
           },
         })
       end

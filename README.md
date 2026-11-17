@@ -128,7 +128,7 @@ For an already-conflicted file, select it under **Merge Changes**, or use `:Code
 | Changes tree | `s` | Stage the resolved file |
 | Workspace | `g` | Graph: `c` continues / `a` aborts (confirmation required) |
 
-Tree `r` requires every block to have been explicitly accepted or marked resolved, validates the current merge inputs, saves Result, and moves the file to **Changes**. It never silently accepts unreviewed Base text. Git's index remains unmerged until `s` stages the file. Use `g?` or `:CodeDiff help` for the short popup guide.
+Tree `r` requires every block to have been explicitly accepted or marked resolved, validates the current merge inputs, saves Result, and moves the file to **Changes**. It never silently accepts unreviewed Base text. Git's index remains unmerged until `s` stages the file. Use `h` in the tree or `:CodeDiff help` from any pane for the short popup guide; source-pane footers show Enter/both controls, not staging controls.
 
 The additional configurable conflict actions below remain available, including in native merge tabs. Configure them under `keymaps.conflict`. Incoming/Current always mean the same Git stages, regardless of focus; during a rebase, Git's ours/theirs labels can differ from your usual branch perspective. Quit, help, file navigation, and tree focus/visibility use `keymaps.view`; Tab/Shift-Tab and Ctrl-q are fixed. Native help reflects the configured bindings.
 

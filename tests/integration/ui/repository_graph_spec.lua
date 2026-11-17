@@ -172,8 +172,8 @@ describe("Native repository graph", function()
     local handle = loaded(open())
     local connector
     for row, line in ipairs(vim.api.nvim_buf_get_lines(handle.bufnr, 0, -1, false)) do
-      if line:find("\\", 1, true) or line:find("/", 1, true) then
-        if line:match("^[ |/\\_%.%-]+$") then connector = row; break end
+      if line:find("╲", 1, true) or line:find("╱", 1, true) or line:find("\\", 1, true) or line:find("/", 1, true) then
+        if line:match("^[ │╱╲─·|/\\_%.%-]+$") then connector = row; break end
       end
     end
     assert.is_not_nil(connector)

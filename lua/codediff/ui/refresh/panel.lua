@@ -85,6 +85,21 @@ function M.read(session, done)
   local next_data = vim.tbl_extend("force", {}, data)
   local function status_result(err, status)
     vim.schedule(function()
+      if not err and session.popup and status and not data.base_revision then
+        local tracking = require("codediff.ui.conflict.tracking")
+        local conflicts = {}
+        for _, file in ipairs(status.conflicts or {}) do
+          local absolute = path.make_ref(file.path, data.git_root).absolute
+          local state = tracking.get_state(absolute)
+          if state and state.file_resolved_tick == vim.api.nvim_buf_get_changedtick(state.result_bufnr)
+            and state.merge_input_identity == file.merge_input_identity and not tracking.stage_error(absolute) then
+            status.unstaged[#status.unstaged + 1] = vim.tbl_extend("force", file, { status = "M", resolved_conflict = true })
+          else
+            conflicts[#conflicts + 1] = file
+          end
+        end
+        status.conflicts = conflicts
+      end
       next_data.status_result = status
       done(err, next_data)
     end)
@@ -219,6 +234,8 @@ function M.comparison(panel, file)
     if file.group == "conflicts" then
       original_revision, modified_revision = ":3", ":2"
       conflict = true
+    elseif file.resolved_conflict then
+      original_revision, modified_revision = "HEAD", "WORKING"
     elseif data.base_revision then
       original_revision = refs.original or data.base_revision
       modified_revision = refs.modified or data.target_revision or "WORKING"
