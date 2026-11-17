@@ -2,27 +2,12 @@
 -- Pure buffer factory — no window, session, or lifecycle knowledge
 local M = {}
 
-local logo = {
-  " ██████╗  ██████╗ ██████╗ ███████╗██████╗ ██╗███████╗███████╗",
-  "██╔════╝ ██╔═══██╗██╔══██╗██╔════╝██╔══██╗██║██╔════╝██╔════╝",
-  "██║      ██║   ██║██║  ██║█████╗  ██║  ██║██║█████╗  █████╗  ",
-  "██║      ██║   ██║██║  ██║██╔══╝  ██║  ██║██║██╔══╝  ██╔══╝  ",
-  "╚██████╗ ╚██████╔╝██████╔╝███████╗██████╔╝██║██║     ██║     ",
-  " ╚═════╝  ╚═════╝ ╚═════╝ ╚══════╝╚═════╝ ╚═╝╚═╝     ╚═╝     ",
-}
-
 local hint_line = "Working tree is clean — no changes to display."
 local keys_line = "[R] Refresh  [q] Close"
 
 local ns = vim.api.nvim_create_namespace("codediff-welcome")
 
--- Setup highlight groups (called at module load)
-local function setup_highlights()
-  vim.api.nvim_set_hl(0, "CodeDiffWelcomeLogo", { link = "Function", default = true })
-  vim.api.nvim_set_hl(0, "CodeDiffWelcomeKey", { link = "Special", default = true })
-end
-
-setup_highlights()
+vim.api.nvim_set_hl(0, "CodeDiffWelcomeKey", { link = "Special", default = true })
 
 -- Compute display width of a string (handles multi-byte characters)
 local function display_width(str)
@@ -39,7 +24,7 @@ local function center(str, width)
   return string.rep(" ", pad) .. str
 end
 
---- Create a welcome buffer with centered logo and hints
+--- Create a welcome buffer with centered hints
 --- @param width number Available width in columns
 --- @param height number Available height in rows
 --- @return number bufnr
@@ -52,14 +37,10 @@ function M.create_buffer(width, height)
     pcall(vim.api.nvim_buf_set_name, bufnr, "codediff (" .. bufnr .. ")")
   end
 
-  -- Build content lines: logo + blank + hint + keys
-  local content_lines = {}
-  for _, line in ipairs(logo) do
-    table.insert(content_lines, center(line, width))
-  end
-  table.insert(content_lines, "")
-  table.insert(content_lines, center(hint_line, width))
-  table.insert(content_lines, center(keys_line, width))
+  local content_lines = {
+    center(hint_line, width),
+    center(keys_line, width),
+  }
 
   -- Vertical centering: add blank lines above
   local total_content = #content_lines
@@ -79,17 +60,6 @@ function M.create_buffer(width, height)
   -- Apply highlights using extmarks in the welcome namespace
   for i, line in ipairs(lines) do
     local row = i - 1
-
-    -- Logo lines: highlight the non-whitespace portion
-    if line:find("██") or line:find("╔") or line:find("╚") then
-      local start_col = line:find("%S")
-      if start_col then
-        vim.api.nvim_buf_set_extmark(bufnr, ns, row, start_col - 1, {
-          end_col = #line,
-          hl_group = "CodeDiffWelcomeLogo",
-        })
-      end
-    end
 
     -- Keys line: highlight bracket pairs [R] and [q]
     if line:find("%[R%]") or line:find("%[q%]") then

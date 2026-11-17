@@ -34,7 +34,7 @@ local function reload_side(win, info, is_virtual)
 
   local function edit_in_place()
     vim.api.nvim_set_current_win(win)
-    vim.cmd("edit! " .. vim.fn.fnameescape(info.target))
+    vim.api.nvim_cmd({ cmd = "edit", bang = true, args = { info.target }, magic = { file = false, bar = false } }, {})
     info.bufnr = vim.api.nvim_get_current_buf()
   end
 

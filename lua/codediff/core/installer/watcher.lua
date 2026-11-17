@@ -5,7 +5,7 @@ local path_util = require("codediff.core.path")
 local uv = vim.uv or vim.loop
 
 local VERSION = "0.23.2"
-local RELEASE_BASE = "https://github.com/esmuellert/codediff/releases/download/v" .. VERSION
+local RELEASE_BASE = "https://github.com/EdwardAstill/codediff.nvim/releases/download/watcher-v" .. VERSION
 local pending_callbacks = {}
 local installing = false
 

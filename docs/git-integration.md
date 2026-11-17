@@ -7,6 +7,7 @@ This is the current Git guide for Edward Astill's CodeDiff fork. Start with the 
 | Goal | Command | Scope and layout |
 | --- | --- | --- |
 | Prepare a commit | `:CodeDiff` | Repository status: four-pane popup with separate Unstaged and Staged trees |
+| Merge a branch/commit or rebase onto it | `:CodeDiff`, then `g`, select a row, `m` / `r` | Native Git graph, explicit direction confirmation, automatic conflict grid |
 | Use native inline status | `:CodeDiff --inline` | Repository status in a native tab, with configurable native mappings |
 | Compare the repository against an older revision | `:CodeDiff HEAD~1` | Native Explorer listing changed files, not just the current file |
 | Inspect the index | `:CodeDiff --staged` | Native HEAD-versus-index comparison |
@@ -16,7 +17,7 @@ This is the current Git guide for Edward Astill's CodeDiff fork. Start with the 
 | Browse recent commits | `:CodeDiff history` | Native history panel; selected commit compared with its parent |
 | Resolve an existing text conflict | `:CodeDiff merge path/to/file` | Incoming/Current/Base/Result grid, with a scoped tree on the left |
 
-The default popup requires the side-by-side layout. A global `diff.layout = "inline"` also selects native inline status; use `:CodeDiff --side-by-side` to request the popup for that invocation. Conflicts always use the fixed merge grid, including when selected from inline status. Repository action dialogs (`c`, `z`, `b`, `w`) belong to ordinary status review, not merge panes or arbitrary revision tabs.
+The default popup requires the side-by-side layout. A global `diff.layout = "inline"` also selects native inline status; use `:CodeDiff --side-by-side` to request the popup for that invocation. Conflicts always use the fixed merge grid, including when selected from inline status. Repository action dialogs (`c`, `z`, `b`, `w`) belong to ordinary status review, not merge panes or arbitrary revision tabs. `g` opens the repository graph from either ordinary status or conflict popups; graph `m`/`r` starts integration and `c`/`a` continues/aborts a pending merge or rebase.
 
 **`:CodeDiff HEAD` is repository-wide.** Use `:CodeDiff file HEAD` when you mean the current file. An empty/scratch buffer is not valid for the `file` revision command; repository review can use the working directory or an explicit `--repo`.
 
@@ -40,7 +41,7 @@ Use the default popup or native inline **status** for staging decisions. An arbi
 
 ### Revert does not unstage
 
-In a diff pane, `r` restores the selected hunk in the working file to the **original comparison version** and asks for confirmation. It never writes the index. In the popup that original version is Before, physically to the left of After; native layouts can reposition the original pane.
+In a diff pane, `r` restores the selected hunk in the working file to the **original comparison version** and asks for confirmation. It never writes the index. In the popup that original branch/commit baseline is physically to the left of Current; native layouts can reposition the original pane.
 
 For example, suppose one hunk is version **A** in HEAD, version **B** in the index, and also **B** in the working file:
 
@@ -62,9 +63,9 @@ Use `s` on a file row for the entire file, or a folder row for its directory pat
 
 The full procedures live in the review guide:
 
-- [Commit staged changes](../README.md#commit-staged-changes): `c` shows only the current HEAD and message; Ctrl-s commits the existing index. It never auto-stages. Empty index/message, changed HEAD, and Git failures retain the draft while its dialog stays open.
+- [Commit staged changes](../README.md#commit-staged-changes): `c` shows only the current HEAD and message; Ctrl-s commits the existing index. It never auto-stages. Empty index (unless finishing a pending merge), empty message, changed HEAD, and Git failures retain the draft while its dialog stays open.
 - [Stash tracked changes](../README.md#stash-tracked-changes): `z` confirms a normal `git stash push`, including staged and unstaged tracked changes. Untracked files remain. Unsaved tracked buffers or an unborn/changed HEAD block it. Restoring a stash is a Git/client operation; there is no pop/apply picker here.
-- [Inspect local branches and worktrees](../README.md#inspect-branches-and-worktrees): separate read-only `b` and `w` popups; no checkout/create/delete actions.
+- [Manage local branches and worktrees](../README.md#manage-branches-and-worktrees): `b` / `w` open separate lists; Enter switches, `n` creates, and Ctrl-s submits the name/destination draft. Checkout protects unsaved buffers; worktree switching preserves old-tree buffers and follows the selected tree in the current tab.
 
 ## Work in another repository or limit the listing
 
@@ -130,11 +131,17 @@ Expand a commit, then choose its file. `--base WORKING` is different from compar
 
 Use `:CodeDiff pr <number>` to fetch and compare a pull request without checking out its branch. Remote/base/path filters and private-ref cleanup are documented in the [pull-request reference](../README.md#pull-requests).
 
+Open `:CodeDiff` review and press `g` for Git's native `log --graph --all --topo-order` view. The header identifies checked-out HEAD, including detached/unborn state; decorations include local branches, fetched remote branches, tags, and merge commits. Move to a branch-tip or commit row with `i`/`k` or arrows. `m` merges that selection **into the checked-out branch**; `r` rebases the checked-out branch **onto the selection**. Read the direction and full object IDs, then `y` to execute or `n` to cancel. Header/connector rows are not actionable. `R` refreshes, `L` loads older history, and `q`/Escape/Ctrl-q closes.
+
+The selected commit ID is frozen; moving its branch ref cannot change an already-confirmed target. New integrations require a born local branch, saved buffers, a clean tracked worktree/index, and no existing Git operation. A merge may fast-forward or automatically create a merge commit. Rebase rewrites the current branch's commits without preserving merge commits or updating other branch refs. There is no auto-stash, fetch, or push; fetch externally when you want fresh remote tips. Git still protects untracked files it would overwrite. Failures leave real Git state available for inspection, without an automatic reset or abort. Actual conflicts automatically open Incoming/Current/Base/Result.
+
+The explicit `:CodeDiff merge path/to/file` command only opens an **already-conflicted** file; it does not initiate a branch merge. Integration `m`/`r` lives in the graph; in Result and native editable views, `m` remains the normal Neovim mark prefix.
+
 Select **Merge Changes** or use `:CodeDiff merge path/to/file`. The fixed grid has read-only Incoming, Current, and Base plus an editable Result. Result starts with automatic non-conflicting changes and unresolved Base regions. Use explicit choices or Mark Resolved after manual editing, then `:write` and stage the whole file. CodeDiff refuses affected unopened, unresolved, unsaved, or stale-input conflicts for file/folder/all staging; external `git add` bypasses this safeguard. There is no hunk Revert for merges.
 
 Result edits and approvals survive file switches and reopening while their buffer remains loaded; approvals are not persisted across buffer deletion or restarts. A preserved file may still contain conflict markers. If a range is ambiguous, edit it manually and Mark Resolved rather than forcing a replacement. Vertical scrolling is linked by default, horizontal scrolling independent. See the [merge shortcuts](../README.md#conflict-and-merge-controls) for all supported inputs and actions.
 
-When invoked directly, `:write` saves and `-` stages the resolved file. With [Git mergetool](../README.md#merge-tool), save and use CodeDiff's `q` / Ctrl-q to finish; Git may confirm success and stages successful resolutions itself. Use `:cquit` to abort, not a forced successful quit. Neither workflow automatically commits or continues the merge.
+When invoked directly, `:write` saves and `-` stages the resolved file (`s` in a popup tree also works). After staging every conflict in a popup, use `g`, then `c` and confirm to continue the pending merge/rebase with its existing message. Rebase may pause again at another commit. Graph `a` asks to abort and discard saved tracked conflict resolutions; both actions refuse unsaved repository buffers. This also recognizes externally started merges/rebases. Ordinary review's commit composer can still finish a merge, including a Current-only resolution with no staged tree diff. Native file-scoped sessions can use `git merge --continue` / `git rebase --continue`. With [Git mergetool](../README.md#merge-tool), save and use CodeDiff's `q` / Ctrl-q to finish; Git may confirm success and stages successful resolutions itself. Use `:cquit` to abort, not a forced successful quit. Saving/staging alone never automatically commits or continues.
 
 ## Troubleshooting and supported API
 

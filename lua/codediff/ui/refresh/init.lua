@@ -119,6 +119,7 @@ function Controller:publish(data, redraw)
   self.blocked = nil
   data.result = session.result_bufnr and inputs.lines(session.result_bufnr) or nil
   self.last = data
+  require("codediff.ui.popup").update_titles(session)
 end
 
 function Controller:run()
@@ -131,6 +132,9 @@ function Controller:run()
     return require("codediff.ui.lifecycle").get_panel_view(self.tabpage) == panel
   end
   self.pending, self.callbacks, self.running = {}, {}, true
+  if event.full or event.head or event.refs then
+    require("codediff.ui.popup").refresh_titles(self.session)
+  end
   local finished = false
   local function finish(err, cancelled)
     if finished then
@@ -346,6 +350,7 @@ function M.attach(tabpage)
     end,
   })
   self:watch()
+  require("codediff.ui.popup").refresh_titles(session)
   M.ready(tabpage)
   return self
 end
@@ -383,6 +388,7 @@ function M.ready(tabpage)
       self:watch()
     end
     self.last = inputs.capture(session)
+    require("codediff.ui.popup").update_titles(session)
     self.blocked = nil
     if next(self.pending) or #self.callbacks > 0 then
       self:schedule()

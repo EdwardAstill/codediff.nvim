@@ -1,4 +1,5 @@
 local M = {}
+local revision = require("codediff.core.git.revision")
 
 local chrome
 local hidden_chrome = { laststatus = 0, cmdheight = 0, showmode = false, ruler = false }
@@ -62,6 +63,55 @@ function M.capture()
   return { return_win = vim.api.nvim_get_current_win(), return_view = vim.fn.winsaveview(), initial_chrome = capture_chrome() }
 end
 
+function M.update_titles(session)
+  if not session.popup or session.merge or session.result_win then return end
+  local data = session.panel and session.panel.data or {}
+  local head = session.popup.head or {}
+  local branch = head.ref and head.ref:gsub("^refs/heads/", "")
+  local staged = data.current_file_group == "staged"
+  local original, modified = "Index", "Current"
+  if staged then
+    local oid = head.oid
+    local snapshot = session.refresh and session.refresh.last
+    local source = snapshot and snapshot.sources.original
+    if oid and source and source.revision == "HEAD" and vim.deep_equal(source.path, session.original) and revision.is_fixed(source.resolved) then
+      oid = source.resolved
+    elseif oid and session.source_revisions and session.source_revisions.original == "HEAD" and revision.is_fixed(session.original_revision) then
+      oid = session.original_revision
+    end
+    if oid then
+      original = (branch and head.oid == oid and branch .. " @ " or "") .. oid:sub(1, 8)
+    else
+      original = branch and branch .. " (unborn)" or "HEAD"
+    end
+    modified = "Current (index)"
+  elseif branch or head.oid then
+    original = (branch or head.oid:sub(1, 8)) .. " (index)"
+  end
+  for side, title in pairs({ original = original, modified = modified }) do
+    local win = session[side .. "_win"]
+    if win and vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_config(win).title then
+      vim.api.nvim_win_set_config(win, { title = " " .. title .. " ", title_pos = "center" })
+    end
+  end
+end
+
+function M.refresh_titles(session)
+  local popup = session.popup
+  if not popup or popup.closing or not session.git_root then return end
+  local request, root = {}, session.git_root
+  popup.title_request = request
+  revision.get_head(root, function(err, head)
+    if require("codediff.ui.lifecycle").get_session(session.tabpage) ~= session
+      or session.popup ~= popup or popup.closing or popup.title_request ~= request or session.git_root ~= root then
+      return
+    end
+    popup.head = not err and head or nil
+    M.update_titles(session)
+    if err then vim.notify_once("CodeDiff HEAD: " .. err, vim.log.levels.WARN) end
+  end)
+end
+
 -- :edit! must never abandon unsaved work while retargeting a popup pane.
 function M.prepare_switch(win)
   local buf = vim.api.nvim_win_get_buf(win)
@@ -109,10 +159,10 @@ function M.geometry(hide_tree, merge)
     }
   end
   return {
-    unstaged = pane("Unstaged", "s stage h help", col, row, left, top),
-    staged = pane("Staged", "s unstage h help", col, row + top, left, height - top),
-    original = pane("Before", "s stage/unstage  h help", col + left, row, before, height),
-    modified = pane("After", "s stage/unstage  h help", col + left + before, row, width - left - before, height),
+    unstaged = pane("Unstaged", merge and "s stage g? help" or "s stage h help", col, row, left, top),
+    staged = pane("Staged", merge and "s unstage g? help" or "s unstage h help", col, row + top, left, height - top),
+    original = pane("Index", "s stage/unstage  h help", col + left, row, before, height),
+    modified = pane("Current", "s stage/unstage  h help", col + left + before, row, width - left - before, height),
   }
 end
 
@@ -168,6 +218,7 @@ function M.arrange(session)
       end
     end
   end
+  M.update_titles(session)
   if session.base_win then require("codediff.ui.conflict.view.result").update_labels(session) end
   if root and not root.is_hidden then
     for _, pane in ipairs(root.panes or { root }) do

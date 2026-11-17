@@ -1,6 +1,6 @@
 # Build System Guide
 
-Most users do not need to compile the native diff library. See [automatic installation](../README.md#automatic-installation) for the upstream binaries used by this fork.
+Most users do not need to compile the native diff library. See [automatic installation](../README.md#automatic-installation) for the pinned binaries hosted by this repository.
 
 Run the commands below from the repository root.
 

@@ -57,6 +57,12 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
     is_conflict = is_conflict,
   }
 
+  if session and session.popup then
+    lifecycle.set_tab_keymap(tabpage, "n", "g", function()
+      require("codediff.ui.graph").open(ctx)
+    end, { desc = "Repository graph", nowait = false })
+  end
+
   if session and session.popup and not is_conflict then
     local function map(key, action, desc)
       lifecycle.set_tab_keymap(tabpage, "n", key, action, { desc = desc })

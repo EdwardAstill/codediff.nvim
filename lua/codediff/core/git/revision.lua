@@ -21,6 +21,31 @@ function M.is_fixed(revision)
   return hash ~= nil and (#hash == 40 or #hash == 64) and (suffix == "" or suffix:match("^[~^%d]+$") ~= nil)
 end
 
+--- Read checked-out identity, including detached and unborn HEADs.
+function M.get_head(git_root, callback)
+  local function run(args, done)
+    local argv = { "git", "-C", git_root }
+    vim.list_extend(argv, args)
+    vim.system(argv, {}, vim.schedule_wrap(done))
+  end
+  local function error_text(result)
+    local text = vim.trim((result.stderr or "") .. "\n" .. (result.stdout or ""))
+    return text ~= "" and text or ("Git exited with status " .. result.code)
+  end
+  run({ "symbolic-ref", "--quiet", "HEAD" }, function(symbolic)
+    if symbolic.code ~= 0 and symbolic.code ~= 1 then callback(error_text(symbolic)); return end
+    local ref = symbolic.code == 0 and vim.trim(symbolic.stdout) or nil
+    run({ "rev-parse", "--verify", "--quiet", "HEAD" }, function(revision)
+      if revision.code ~= 0 and not (revision.code == 1 and ref) then callback(error_text(revision)); return end
+      local oid = revision.code == 0 and vim.trim(revision.stdout) or nil
+      callback(nil, {
+        ref = ref, oid = oid,
+        label = (ref and ref:gsub("^refs/heads/", "") or "detached HEAD") .. " @ " .. (oid and oid:sub(1, 8) or "unborn"),
+      })
+    end)
+  end)
+end
+
 -- Resolve a git revision to its commit hash (async, atomic)
 -- revision: branch name, tag, or commit reference
 -- git_root: absolute path to git repository root

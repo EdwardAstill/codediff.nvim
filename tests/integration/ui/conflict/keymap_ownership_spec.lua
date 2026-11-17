@@ -94,6 +94,15 @@ describe("merge view keymap ownership", function()
     assert.equals("NONE", effective(session.original_bufnr, "dp"), "merge view must not claim `dp`")
   end)
 
+  it("leaves the normal mark prefix available in editable Result", function()
+    local session = open_merge_view()
+    assert.is_false(require("codediff.ui.lifecycle").owns_keymap(session.tabpage, "m"))
+    vim.api.nvim_set_current_win(session.result_win)
+    vim.api.nvim_win_set_cursor(session.result_win, { 2, 0 })
+    vim.cmd("normal ma")
+    assert.equals(2, vim.api.nvim_buf_get_mark(session.result_bufnr, "a")[1])
+  end)
+
   it("gets changes again in an ordinary diff", function()
     -- The counterpart: outside a merge, do/dp are codediff's. Without this a
     -- change that simply never binds them would pass the assertions above.

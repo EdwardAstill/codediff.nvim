@@ -42,7 +42,8 @@ FIRST REVIEW TO COMMIT                                    *codediff-quickstart*
 <
    To choose a different repository, use |codediff-repo|.
 2. In Unstaged, move with i/k; expand a folder with l and press Enter on a
-   file. Before shows the index; After shows your working file.
+   file. The branch/commit pane shows the index baseline; Current shows your
+   working file.
 3. Press Tab until a diff pane has focus. Move onto a changed block with ].
    Check the > markers and Hunk N/M footer before acting.
 4. Press s in that diff pane to stage only that hunk. To stage a whole file
@@ -65,7 +66,7 @@ With the default side-by-side layout, :CodeDiff opens a popup in the current
 tab, even when the repository is clean:
 >
   +-------------+----------------------+----------------------+
-  | Unstaged    | Before               | After                |
+  | Unstaged    | Branch / HEAD        | Current              |
   |             |                      |                      |
   +-------------+                      |                      |
   | Staged      |                      |                      |
@@ -79,8 +80,8 @@ the merge popup restores your command-line height for ordinary editing.
 
 Default initial focus is the explorer (configurable with explorer.initial_focus).
 Selecting a file in a popup tree does not jump focus into its diff. Tab cycles
-Unstaged -> Staged -> Before -> After, then wraps. In a merge the code panes
-instead cycle Incoming -> Current -> Base -> Result.
+Unstaged -> Staged -> branch/commit baseline -> Current, then wraps. In a merge
+the code panes instead cycle Incoming -> Current -> Base -> Result.
 Shift-Tab reverses the order. The tree row chooses the file; the cursor in a
 diff pane chooses the hunk. Closing a child dialog returns to its source pane.
 
@@ -89,6 +90,11 @@ use native tabs instead: |codediff-native|. Setting diff.layout = "inline"
 also opts out of the status popup. Ordinary popup geometry and navigation are
 fixed. The merge popup uses explorer.width where space permits and the merge
 keymaps in |codediff-merge|, not the ordinary review key layer.
+
+The original pane identifies the checked-out branch, or commit for detached
+HEAD. Unstaged uses "main (index)" -> "Current"; Staged uses
+"main @ abc12345" -> "Current (index)". Unborn branches keep their name.
+Titles follow repository refreshes and checkout changes.
 
 POPUP SHORTCUTS                                         *codediff-popup-keys*
 
@@ -105,6 +111,7 @@ Editable dialogs have their own submission keys.
                c                    Commit dialog
                z                    Confirm tracked-only stash
                b / w                Local branch / worktree lists
+               g                    Repository graph (also in conflict popup)
   Trees        Up / Down            Move up / down
                j / l                Collapse / expand folder; l selects file
                Enter / double-click Select file or toggle folder
@@ -123,7 +130,7 @@ Merge panes are the exception: use g? and |codediff-merge|.
 HUNK SELECTION                                               *codediff-hunks*
 
 A hunk is a contiguous changed block computed by the diff engine. Place the
-cursor inside it in Before or After, or jump with [ / ]. The selected hunk has
+cursor inside either diff pane, or jump with [ / ]. The selected hunk has
 > gutter markers, emphasized line numbers on both sides, and a Hunk N/M footer.
 Hunk -/M means no hunk is selected. On a deletion-only side, its boundary line
 is the selection point.
@@ -153,11 +160,11 @@ staging. Hunk actions do not apply to the merge grid: |codediff-merge|.
 REVERT WORKING-FILE HUNK                                    *codediff-revert*
 
 Popup r (diff panes only) restores the selected working-file hunk to the
-Before/original comparison baseline. Native tabs use the configured
+original comparison baseline. Native tabs use the configured
 keymaps.view.revert_hunk, default <leader>hr. A native layout may reposition
 the original pane; Revert still uses its version, not a physical screen side.
 
-  Comparison                 Original         After       Revert target
+  Comparison                 Original         Modified    Revert target
   Unstaged                   Index            Worktree    Index
   Staged                     HEAD             Index       HEAD
   Revision vs worktree       Given revision   Worktree    Given revision
@@ -166,7 +173,7 @@ the original pane; Revert still uses its version, not a physical screen side.
   Merge/conflict             Merge sides      Result      Not available
 
 An absent original file is an empty baseline. The action writes the working
-file even when After displays the index. It NEVER changes the index. Thus
+file even when Current displays the index. It NEVER changes the index. Thus
 reverting a staged hunk leaves that content staged and eligible for commit;
 the working file may now contain an opposite, unstaged change. To remove the
 change from the next commit too, unstage it separately.
@@ -188,7 +195,8 @@ WARNING: discarded unstaged content may not be recoverable by Git.
 REPOSITORY ACTIONS                                     *codediff-repository*
 
 These actions require the Git status popup and affect its repository, not just
-the selected file. They are not branch/worktree management or stash browsing.
+the selected file. Branches/worktrees support creation and switching, not
+deletion.
 
 Commit (c)~
 The editable dialog starts in Insert mode. Its title shows the current branch
@@ -196,7 +204,8 @@ and short HEAD object ID; detached and unborn HEAD are supported. Type the
 message, then Ctrl-s in Insert or Normal mode to commit only the current index.
 Normal-mode s also submits. Nothing is automatically staged or saved.
 
-An empty message, empty index, or HEAD change blocks submission. Git and hook
+An empty message, empty index (unless finishing a pending merge), or HEAD change
+blocks submission. Git and hook
 errors keep the message for correction/retry while the dialog stays open. If
 HEAD changed, copy any needed message, cancel, and reopen the dialog. Ctrl-q
 cancels from Insert or Normal mode; cancelling/closing discards this scratch
@@ -213,11 +222,56 @@ while Git runs, its unsaved edits are retained and a warning is shown. Read any
 reload error: Git may have succeeded even if an editor buffer could not reload.
 There is no stash picker, pop, or apply action; use Git outside this UI.
 
-Read-only lists (b / w)~
+Repository graph (g)~                                       *codediff-graph*
+Press g in the status or conflict popup to view Git's own log --graph --all
+--topo-order output. The header identifies checked-out HEAD; branch, remote,
+tag, and merge-commit decorations show how histories connect. Detached and
+unborn repositories can be viewed without enabling integration actions.
+
+Select a commit or branch-tip row with i/k or arrows:
+  m   Merge selection INTO the checked-out branch.
+  r   Rebase the checked-out branch ONTO selection.
+  R   Refresh the graph.
+  L   Load older history.
+  c   Continue a pending merge/rebase (existing commit message).
+  a   Abort a pending merge/rebase (confirmation warns about discarded work).
+  q / Esc / Ctrl-q   Close graph.
+
+The confirmation names the direction and both full object IDs. y executes;
+n, q, Esc, or Ctrl-q cancels. Header/connector rows do not start operations.
+The selected object ID is fixed even if its branch ref moves afterward.
+Starting requires a born, checked-out local branch, no in-progress Git
+operation, a clean tracked index/worktree, and no unsaved repository buffers.
+A merge may fast-forward or create a merge commit. A rebase rewrites this
+branch's commits, flattens merge commits, and leaves other branch refs alone.
+There is no auto-stash, fetch, push, force-push, or automatic reset on failure.
+Git still protects untracked files it would overwrite.
+
+Conflicts automatically open Incoming/Current/Base/Result: |codediff-merge|.
+Resolve, save, and stage each file, then g and c to continue. Rebase can pause
+again at another commit. g and a explicitly aborts, discarding saved tracked
+conflict resolutions; unsaved buffers block both continue and abort.
+These controls also recognize merges/rebases started outside CodeDiff.
+The m shortcut is only installed in the graph, not merge Result or native
+editable views, where it remains Neovim's normal mark prefix.
+
+Branches and worktrees (b / w)~
 b lists LOCAL branches with current-branch marker, short object ID, and subject.
-w separately lists worktree paths, branch/HEAD information, and available
-detached/bare/locked/prunable flags. Use i/k to move; q, Esc, or Ctrl-q closes.
-Neither list switches, creates, or deletes branches/worktrees.
+w lists worktree paths, branch/HEAD information, and detached/bare/locked/prunable
+flags. Move with i/k or the arrows; Enter switches to the selected entry.
+q, Esc, or Ctrl-q closes the list.
+
+Press n in the branch list, type a name, then Ctrl-s to run git switch -c NAME.
+Press n in the worktree list: the destination starts with editable .worktrees/.
+Append a folder name or delete/replace the path; put the new branch on line 2.
+Ctrl-s creates and enters the worktree; relative paths use the current worktree.
+Ctrl-q cancels either draft. Git errors leave input available for correction.
+
+Branch checkout refuses unsaved repository buffers, and Git rejects conflicting
+on-disk changes. Worktree switching keeps old-tree buffers and unsaved edits,
+retargets review, and changes only the tab-local working directory. Unfinished
+merge resolution blocks navigation away. No forced checkout, automatic stash,
+or deletion is performed. Use g to start or manage a merge/rebase from the graph.
 
 ==============================================================================
 SAFETY AND RETURN TO EDITING                                *codediff-safety*
@@ -470,8 +524,16 @@ automatic non-conflicting edits. Both retains complete alternatives in order.
 Write Result with :write, then stage the whole file with - (or s in a popup
 tree). CodeDiff refuses file/folder/all staging for affected unopened,
 unresolved, unsaved, or stale-input conflicts. Hunk operations cannot bypass
-this guard. External git add does bypass it. Finish the Git operation yourself.
+this guard. External git add does bypass it.
 Tree rows show unresolved counts or "needs review" for unknown/stale inputs.
+After resolving, saving, and staging every conflict in a popup, press g, then c
+and confirm to continue the pending merge/rebase. A rebase can pause again at
+another commit. Graph a asks to abort and discard saved tracked edits. Both
+continue and abort refuse unsaved repository buffers. Ordinary review's commit
+composer can still finish a merge with a custom message, even when resolving to
+Current leaves no staged tree diff. Native file-scoped views can use
+git merge --continue or git rebase --continue. Saving alone does not stage or
+continue an operation.
 Close offers Discard, Cancel, or Keep changes and close for unsaved Results.
 Discard reloads the last disk contents, not the pre-merge file; Keep retains
 buffers and undo history. If preserved edits make a range ambiguous, automatic

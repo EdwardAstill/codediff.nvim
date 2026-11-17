@@ -184,6 +184,7 @@ function M.open_in_prev_tab(ctx)
     vim.notify("Failed to open buffer in previous tab: " .. err, vim.log.levels.ERROR)
     return
   end
+  vim.bo[vim.api.nvim_win_get_buf(target_win)].buflisted = true
 
   if cursor then
     pcall(vim.api.nvim_win_set_cursor, target_win, cursor)

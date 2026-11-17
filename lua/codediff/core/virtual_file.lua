@@ -164,6 +164,7 @@ function M.setup()
       -- Set buffer options FIRST to prevent LSP attachment
       vim.bo[buf].buftype = "nowrite"
       vim.bo[buf].bufhidden = "wipe"
+      vim.bo[buf].buflisted = false
 
       -- Clear any auto-detected filetype without firing FileType autocmd.
       -- Neovim's built-in filetype detection matches the .js/.ts/.tf extension

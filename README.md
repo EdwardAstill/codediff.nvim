@@ -2,7 +2,7 @@
 
 **Review diffs, prepare commits, and keep Git operations explicit.**
 
-This is Edward Astill's personal fork of [CodeDiff](https://github.com/esmuellert/codediff.nvim). Its default Git status view is a floating four-pane review workspace, not upstream's full-tab Explorer. It retains the VSCode-style diff engine, live refresh, revision/history views, and conflict resolution.
+This is Edward Astill's independently maintained derivative of [CodeDiff](https://github.com/esmuellert/codediff.nvim). Its default Git status view is a floating four-pane review workspace, not the original full-tab Explorer. It retains the VSCode-style diff engine, live refresh, revision/history views, and conflict resolution. Upstream commits are not automatically imported.
 
 ## Quick start
 
@@ -14,7 +14,11 @@ After [installation](#installation), save your file edits and run `:CodeDiff` in
 4. Inspect **Staged** before committing. Press `c`, check the displayed HEAD, type a message, then Ctrl-s to commit the index.
 5. Press `q` to close review and restore your editor's keys and chrome.
 
-Need to undo a choice? [Unstage and revert are different](#stage-unstage-and-revert). Other tasks: [stash](#stash-tracked-changes), [branches/worktrees](#inspect-branches-and-worktrees), [merge conflicts](#conflict-and-merge-controls), [troubleshooting](#safety-and-troubleshooting), and [upgrading](#upgrading-this-fork).
+When the working tree is clean, the diff pane shows only the clean-tree message and refresh/close controls, without a banner.
+
+Browsing files does not add buffer tabs: newly opened previews stay unlisted, while existing editor buffers keep their listing. Editing a new working-file preview makes it a normal listed buffer so unsaved work remains discoverable; explicitly opening a file outside review does the same.
+
+Need to undo a choice? [Unstage and revert are different](#stage-unstage-and-revert). Other tasks: [stash](#stash-tracked-changes), [branches/worktrees](#manage-branches-and-worktrees), [merge conflicts](#conflict-and-merge-controls), [troubleshooting](#safety-and-troubleshooting), and [upgrading](#upgrading-this-fork).
 
 `:CodeDiff help` loads the plugin and opens shortcuts without starting a review. For the full manual with lazy.nvim, run `:Lazy load codediff.nvim`, then `:help codediff`. The load step is unnecessary once CodeDiff has already been used in that Neovim instance.
 
@@ -44,9 +48,18 @@ These fixed bindings apply to ordinary diffs in the popup opened by plain `:Code
 | Diffs | `r` | Confirm Revert of the working-file hunk to its comparison baseline |
 | Workspace | `c` | Commit message popup |
 | Workspace | `z` | Confirm tracked-change stash |
-| Workspace | `b` / `w` | Separate read-only local branch / worktree lists |
+| Workspace | `b` / `w` | Create or switch local branches / worktrees |
+| Workspace | `g` | Open the repository graph, with checked-out HEAD and branch labels |
 
 **Save, stage, and commit are different:** save writes a file; stage changes Git's index; commit records the index. File/folder staging reads disk, while hunk staging can use unsaved buffer content. Save edits before review when you want disk and index to match. Revert changes the working file, not the index; [read the baseline and safety rules](#stage-unstage-and-revert) before confirming.
+
+### Repository graph
+
+Press `g` in the status or conflict popup. The graph comes from `git log --graph --all --topo-order`: local branches, fetched remote branches, tags, and merge commits share the same ancestry view. The header identifies the checked-out branch and HEAD; detached and unborn repositories are readable too.
+
+Select a branch-tip or commit row with `i`/`k` or arrows. `m` **merges the selection into the checked-out branch**; `r` **rebases the checked-out branch onto the selection**. Read the direction and full commit IDs, then `y` to execute or `n` to cancel. Connector/header rows cannot start an operation. The confirmed commit is used even if its branch name subsequently moves.
+
+`R` refreshes, `L` loads older history, and `q`/Escape/Ctrl-q closes. A paused merge/rebase is shown in the graph: `c` continues with the existing commit message; `a` asks to abort and discard saved tracked conflict resolutions. Both refuse unsaved repository buffers. New operations require a born local branch, saved buffers, and a clean tracked index/worktree. No auto-stash, fetch, or push occurs. Rebase rewrites this branch's commits, does not preserve merge commits, and does not update other branch refs.
 
 ### Native revision, history, and inline views
 
@@ -91,7 +104,9 @@ History fold keys act on directory nodes; use Enter to expand commits. Configure
 
 ### Conflict and merge controls
 
-Select a file under **Merge Changes**, or use `:CodeDiff merge path/to/file` for a native merge tab scoped to that file. Start the Git merge separately. Both views have a file tree on the left and this fixed grid:
+Use `g`, select a branch or commit in the graph, then `m` to merge or `r` to rebase onto it. Confirm the explicit direction with `y`; `n` cancels. A clean merge may fast-forward or create a merge commit. Conflicts automatically open Incoming/Current/Base/Result.
+
+For an already-conflicted file, select it under **Merge Changes**, or use `:CodeDiff merge path/to/file` for a native merge tab scoped to that file; this explicit command does not initiate a branch merge. Both conflict views have a file tree on the left and this fixed grid:
 
 | Incoming / theirs (`:3`, read-only) | Current / ours (`:2`, read-only) |
 | --- | --- |
@@ -119,9 +134,11 @@ Configure the conflict actions below under `keymaps.conflict`. Incoming/Current 
 | Merge workspace | `]f` / `[f`, `gf` | Next / previous listed file; open the focused file in the previous tab |
 | Merge workspace | `g?`, `q` / `Ctrl-q` | Show merge shortcuts; close |
 
-Result uses ordinary Neovim editing keys, even in the popup: `i` inserts, `h`/`j`/`k`/`l` move normally, and `s` is **not** hunk staging. Use `g?` or `:CodeDiff help` for merge help. Popup trees keep their fixed tree controls, including `s` to stage and `h` for help. A manual edit does **not** resolve a conflict: inspect it and use Mark Resolved. Editing an approved conflict makes it unresolved again. Per-conflict choices can replace an earlier choice; Take All skips already resolved blocks. Reset All resets every conflict, while preserving automatic non-conflicting edits. Both preserves both complete alternatives in the chosen order.
+Result uses ordinary Neovim editing keys, even in the popup: `i` inserts, `h`/`j`/`k`/`l` move normally, and `s` is **not** hunk staging. Use `g?` or `:CodeDiff help` for merge help. Popup trees keep their fixed tree controls, including `s` to stage. A manual edit does **not** resolve a conflict: inspect it and use Mark Resolved. Editing an approved conflict makes it unresolved again. Per-conflict choices can replace an earlier choice; Take All skips already resolved blocks. Reset All resets every conflict, while preserving automatic non-conflicting edits. Both preserves both complete alternatives in the chosen order.
 
-Use `:write` in Result, then `-` to stage the file (`s` in a popup tree also works). CodeDiff blocks file/folder/all staging when any affected conflict is unreviewed, unresolved, unsaved, or based on changed inputs. Hunk staging, unstaging, and Revert cannot bypass conflict review. Tree rows show unresolved counts, or **needs review** before opening a file. Saving is not staging; finish the Git operation separately. External `git add` bypasses these plugin safeguards.
+The `m`/`r` integration shortcuts belong to the graph, not Result. In Result and native editable views, `m` remains Neovim's normal mark prefix.
+
+Use `:write` in Result, then `-` to stage the file (`s` in a popup tree also works). CodeDiff blocks file/folder/all staging when any affected conflict is unreviewed, unresolved, unsaved, or based on changed inputs. Hunk staging, unstaging, and Revert cannot bypass conflict review. Tree rows show unresolved counts, or **needs review** before opening a file. After staging every conflict, press `g`, then `c` and confirm to continue the merge/rebase. A rebase may stop again at another commit. Graph `a` offers an explicit abort confirmation. Ordinary review's commit composer (`c`, message, Ctrl-s) can still finish a merge, including a Current-only resolution with no staged tree diff. Saving is not staging or continuing; external `git add` bypasses these plugin safeguards.
 
 Closing offers **Discard**, **Cancel**, or **Keep changes and close** for unsaved Results. Discard reloads the last on-disk contents; it does not undo an earlier save. Keep retains buffers and undo history. If preserved edits make a conflict's range ambiguous, automatic replacement is refused: finish editing Result manually and Mark Resolved. Binary, missing/deleted, symlink/submodule, differing file-mode, and unsupported rename conflicts must be resolved outside CodeDiff. Text add/add conflicts are supported with an empty Base. See [Git mergetool setup](#merge-tool).
 
@@ -129,8 +146,12 @@ Closing offers **Discard**, **Cancel**, or **Keep changes and close** for unsave
 
 | Dialog | Key | Action |
 | --- | --- | --- |
-| Read-only lists/help | `i` / `k` | Move up / down |
-| Read-only lists/help | `q` / Escape / `Ctrl-q` | Close (review help also accepts `h`) |
+| Lists/help | `i` / `k` | Move up / down |
+| Lists/help | `q` / Escape / `Ctrl-q` | Close (review help also accepts `h`) |
+| Branch/worktree list | Enter / `n` | Switch to the selected entry / create a new one |
+| Repository graph | `m` / `r`, then `y` | Merge selection into current branch / rebase current branch onto selection |
+| Repository graph | `c` / `a`, then `y` | Continue / abort a paused merge or rebase |
+| Branch/worktree draft | `Ctrl-s` / `Ctrl-q` | Submit / cancel |
 | Confirmation | `y` / `n` | Confirm / cancel; `q`, Escape, and `Ctrl-q` also cancel |
 | Commit message | `Ctrl-s` | Commit the index, from Insert or Normal mode |
 | Commit message | Normal-mode `s` | Commit the index |
@@ -144,9 +165,9 @@ The commit composer starts in Insert mode: Escape first returns to Normal mode; 
 
 - **Live review:** Diffs stay synchronized with repository changes while you edit.
 - **VSCode style diffs:** Review side-by-side or inline changes with line- and character-level highlighting.
-- **Four-pane review:** Unstaged above Staged on the narrow left; numbered Before and After diffs beside them.
+- **Four-pane review:** Unstaged above Staged on the narrow left; numbered branch/commit baseline and Current diffs beside them.
 - **Git staging:** Stage or unstage individual hunks, files, or folders. Revert restores working-file content independently of the index.
-- **Repository actions:** Commit the index, stash tracked changes, and inspect local branches or worktrees in separate popups.
+- **Repository actions:** Commit the index, stash tracked changes, merge/rebase from Git's repository graph, and create/switch local branches or worktrees.
 - **Other comparison modes:** Review revisions, pull requests, and history in native tab layouts.
 - **Focused navigation:** Move between files and hunks, fold unchanged code, and track moved blocks.
 - **Conflict resolution:** Fixed Incoming/Current/Base/Result grid, explicit per-block choices, undoable approvals, and safe whole-file staging.
@@ -161,7 +182,7 @@ The commit composer starts in Insert mode: Escape first returns to Normal mode; 
 - `curl` or `wget` on Unix, or PowerShell on Windows, for automatic downloads
 - A Nerd Font is optional for the default Explorer folder icons
 
-**No compiler required on supported platforms.** The plugin automatically downloads pre-built binaries from upstream GitHub releases; this fork does not publish binaries.
+**No compiler required on supported platforms.** The plugin automatically downloads pinned pre-built binaries from [this repository's releases](https://github.com/EdwardAstill/codediff.nvim/releases).
 
 ### Using lazy.nvim
 
@@ -179,7 +200,7 @@ To add a launcher, include `keys = { { "<leader>d", "<cmd>CodeDiff<cr>", desc = 
 
 CodeDiff automatically downloads the matching diff library on first use and after plugin updates. No build step is required.
 
-The diff library and Linux OpenMP runtime come from [upstream codediff.nvim releases](https://github.com/esmuellert/codediff.nvim/releases), matching the unchanged `VERSION` file. Live refresh also uses the separately versioned `codediff-watcher` from [upstream codediff releases](https://github.com/esmuellert/codediff/releases). These download sources are intentionally preserved; they do not point at this fork's empty release page. Watcher archive extraction requires `tar` on Unix or PowerShell on Windows.
+The diff library and Linux OpenMP runtime use the version in `VERSION`; the watcher is pinned separately. All downloads come from [EdwardAstill/codediff.nvim releases](https://github.com/EdwardAstill/codediff.nvim/releases). The initial snapshots preserve the original diff-library v4.0.6 and watcher v0.23.2 binaries, so new installations no longer depend on the original owner's releases. Watcher archive extraction requires `tar` on Unix or PowerShell on Windows.
 
 To install it explicitly or force a reinstall when troubleshooting:
 
@@ -220,7 +241,7 @@ Place the library in the plugin root directory using one of these filenames:
 
 **Option A: Download from GitHub releases** (recommended)
 
-1. Choose the [release](https://github.com/esmuellert/codediff.nvim/releases) matching your installed plugin version.
+1. Choose the [release](https://github.com/EdwardAstill/codediff.nvim/releases) matching your installed plugin version.
 2. Download the binary for your operating system and Neovim's CPU architecture.
 3. Place it in the plugin root directory and rename it using one of the filenames listed above.
 
@@ -552,19 +573,21 @@ Use `:CodeDiff` to review repository changes, pull requests, files, directories,
 
 ### Review workspace
 
-With the default side-by-side layout, `:CodeDiff` opens a popup in the **current tab**, including in a clean repository. **Unstaged** is top-left and **Staged** bottom-left; **Before** is in the middle and **After** on the right. A file may appear in both trees when it has both staged and unstaged changes.
+With the default side-by-side layout, `:CodeDiff` opens a popup in the **current tab**, including in a clean repository. **Unstaged** is top-left and **Staged** bottom-left; the checked-out **branch or commit** identifies the middle baseline pane, and **Current** is on the right. A file may appear in both trees when it has both staged and unstaged changes.
+
+For example, Unstaged shows `main (index)` → `Current`; Staged shows `main @ abc12345` → `Current (index)`. Detached HEAD uses the commit ID, and an unborn branch keeps its name.
 
 The left trees have no line numbers; the diff panes have absolute line numbers. The normal statusline/mode area is hidden while review is active, with compact hints in the borders. Leaving or closing the popup restores editor chrome. This is a local review keymap layer, not a new Vim editing mode.
 
 Enter previews a file; it does not open that file for ordinary editing. Use Tab/Shift-Tab to move between panes. In a diff, the cursor chooses the hunk: `>` gutter markers, emphasized numbers, and `Hunk N/M` identify it in both panes. The selection remains visible while an action dialog is open. Moving into a tree leaves no active diff hunk; `r` belongs to diff panes, not file rows. See the [shortcut reference](#shortcuts) near Quick start.
 
-Added/deleted files can be one-sided comparisons. Selecting a conflict replaces Before/After with the [Incoming/Current/Base/Result grid](#conflict-and-merge-controls) and ordinary editing in Result. It does not retain the popup's diff movement/stage/revert keys.
+Added/deleted files can be one-sided comparisons. Selecting a conflict replaces the ordinary diff panes with the [Incoming/Current/Base/Result grid](#conflict-and-merge-controls) and ordinary editing in Result. It does not retain the popup's diff movement/stage/revert keys.
 
 #### Stage, unstage, and revert
 
 The default status popup uses these comparisons:
 
-| Selected group/view | Before (original) | After (modified) | What Revert restores in the working file |
+| Selected group/view | Original baseline | Current/modified content | What Revert restores in the working file |
 | --- | --- | --- | --- |
 | Unstaged | Git index | Working file | The index version of the hunk |
 | Staged | HEAD | Git index | The HEAD version of the hunk |
@@ -573,7 +596,7 @@ The default status popup uses these comparisons:
 
 - **Stage** changes the index, preparing content for the next commit. In a tree, `s` operates on the whole file/directory; in a diff, it operates on the cursor's hunk.
 - **Unstage** in the Staged tree/diff changes the index back toward HEAD and keeps working-file edits. It does not undo the edit in the file.
-- **Revert** changes the working file back to Before and **never changes the index**. Confirm the named baseline with `y`; cancel with `n`, `q`, Escape, or Ctrl-q.
+- **Revert** changes the working file back to the original baseline and **never changes the index**. Confirm the named baseline with `y`; cancel with `n`, `q`, Escape, or Ctrl-q.
 
 Consequently, reverting a staged hunk can leave the file in **both** trees: the staged version is still ready to commit, while the working file now differs from it. If you also want that staged change removed, unstage it separately and inspect both trees before committing.
 
@@ -590,7 +613,7 @@ Revert preserves unrelated hunks and the file's line endings. It refuses unsaved
 3. Type a message, including multiple lines if needed.
 4. Ctrl-s submits from Insert or Normal mode. Normal-mode `s` is also a submit shortcut inside this dialog.
 
-CodeDiff never auto-stages. An empty message, empty index, changed HEAD, or Git/hook failure blocks the commit; errors retain the draft while the dialog remains open. If HEAD changed, cancel and reopen to review the new target. Cancel before submitting to avoid a commit; closing a dialog is not an undo for a Git operation already started.
+CodeDiff never auto-stages. An empty message, empty index (unless finishing a pending merge), changed HEAD, or Git/hook failure blocks the commit; errors retain the draft while the dialog remains open. If HEAD changed, cancel and reopen to review the new target. Cancel before submitting to avoid a commit; closing a dialog is not an undo for a Git operation already started.
 
 #### Stash tracked changes
 
@@ -598,11 +621,17 @@ Press `z` and inspect the confirmation's HEAD. `y` runs a normal `git stash push
 
 Stash refuses unsaved tracked buffers, including buffers for staged-deleted files, changed HEAD, or an unborn HEAD. Clean affected buffers reload; edits made while Git runs are not overwritten. There is no stash-message composer or stash list/apply/pop/drop interface here; use Git or your normal Git client to restore a stash.
 
-#### Inspect branches and worktrees
+#### Manage branches and worktrees
 
-`b` lists **local** branches, marking the current branch and showing short commit IDs and subjects. `w` separately lists worktree paths, branches/HEADs, and applicable detached/bare/locked/prunable details. Use `i`/`k` to move through these read-only lists and `q`, Escape, or Ctrl-q to close.
+Press `b` for **local** branches or `w` for worktree paths and branch/HEAD details. Move with `i`/`k` or the arrows, then Enter to switch to the selected entry. `q`, Escape, or Ctrl-q closes the list. These actions also work when the repository has no changes.
 
-Neither list switches checkout, creates/deletes branches or worktrees, or changes the commit dialog's HEAD. The actions remain available when the repository has no changes.
+- **New branch:** in the branch list, press `n`, type its name, then Ctrl-s. This runs `git switch -c <name>` and refreshes review on the new branch.
+- **New worktree:** in the worktree list, press `n`. Line 1 starts with editable `.worktrees/`; append a folder name or delete/replace the path. Enter the new branch name on line 2, then Ctrl-s to create and enter it. Relative destinations are resolved against the current worktree; paths with spaces are supported.
+- **Existing worktree:** select its row and press Enter. Review and the tab-local working directory follow that worktree; old-tree buffers remain available without losing unsaved edits.
+
+Ctrl-q cancels an input draft without running Git. Checkout refuses unsaved repository buffers; ordinary Git protections also reject conflicting on-disk changes. There is no force checkout, automatic stash, or branch/worktree deletion. Use `g` for the graph, then `m` to merge a selection into the current branch or `r` to rebase the current branch onto it; see [graph controls](#repository-graph). Resolve or explicitly abort unfinished integration work before navigating away.
+
+If Git reports an error after submission, inspect the branch/worktree lists before retrying: hooks or concurrent filesystem changes can leave partial results. CodeDiff does not delete branches automatically to undo them.
 
 #### Safety and troubleshooting
 
@@ -610,12 +639,12 @@ Neither list switches checkout, creates/deletes branches or worktrees, or change
 | --- | --- |
 | A save key opens help | Expected in review. Close with `q`, save the actual file in the editor, then reopen. Trees/help/dialogs are scratch buffers. |
 | No hunk selected | Preview a file, Tab into a numbered diff, and move onto a change. A highlighted tree row is not a hunk selection. |
-| Revert/stash refuses unsaved changes | Save or otherwise resolve those edits outside review first; the action will not silently write or discard them. |
+| Revert/stash/checkout refuses unsaved changes | Save or otherwise resolve those edits outside review first; the action will not silently write or discard them. |
 | A hunk changed while confirmation was open | Reopen/refresh the comparison and select it again; do not apply an old patch to new content. |
 | A reverted staged change is still listed | Revert left the index intact. Unstage separately if it must not be committed. |
 | An added/deleted side is blank | This is a one-sided comparison, not a missing preview. |
 | Commit failed | Keep the dialog open to retain the message, fix the reported Git error, and retry; reopen if HEAD changed. |
-| No changes are listed | The popup still supports commit/stash checks and branch/worktree inspection. Check repository/path filters and the selected group. |
+| No changes are listed | The popup still supports commit/stash checks and branch/worktree creation or switching. Check repository/path filters and the selected group. |
 | Old keys or names remain after updating | Restart Neovim so cached plugin modules and personal mappings reload. |
 | Result has no conflict markers but is unresolved | Expected for a fresh merge: unresolved regions contain Base. Choose Incoming/Current/Both/Use Base, or edit and Mark Resolved; then `:write`. |
 | Taking a side reports an ambiguous conflict range | Existing edits were preserved. Finish the conflict manually in Result and Mark Resolved instead of forcing a replacement. |
@@ -627,7 +656,7 @@ The popup preserves unsaved buffers when closing or changing files; it is not a 
 
 Explicit revisions, `--staged`, history, file/directory comparisons, and inline status use native tab layouts with configurable keymaps. `:CodeDiff --inline`, or `diff.layout = "inline"`, opts out of the four-pane popup. Native views use `g?`/`:CodeDiff help`, not the popup's `h`/`c`/`z`/`b`/`w` layer. Their default revert mapping is `<leader>hr`; see [native shortcuts](#native-revision-history-and-inline-views).
 
-In the popup, Before is physically left of After. In native views, `diff.original_position` can move the original pane; the Revert baseline still means the **original** comparison version.
+In the popup, the original branch/commit baseline is physically left of Current. In native views, `diff.original_position` can move the original pane; the Revert baseline still means the **original** comparison version.
 
 ```vim
 " Open the four-pane status popup
@@ -814,7 +843,7 @@ By default, history shows the latest 100 non-merge commits. Expand a commit to s
 
 #### Merge Tool
 
-For an already conflicted working file, run `:CodeDiff merge path/to/file`, or select the conflict from repository status. Resolve blocks with the [conflict shortcuts](#conflict-and-merge-controls), inspect Result, save with `:write`, then stage separately when using CodeDiff directly. This does not start a branch merge.
+For an already conflicted working file, run `:CodeDiff merge path/to/file`, or select the conflict from repository status. Resolve blocks with the [conflict shortcuts](#conflict-and-merge-controls), inspect Result, save with `:write`, then stage with `-` (or `s` in a popup tree). In the popup, use `g`, then `c` and confirm to continue the pending merge/rebase; `a` asks to abort. Native file-scoped sessions can use `git merge --continue` or `git rebase --continue`. The explicit file command does not start a branch merge.
 
 Configure CodeDiff as a Git merge tool, then run `git mergetool` to resolve conflicts (the following uses POSIX-shell quoting):
 

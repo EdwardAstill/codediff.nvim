@@ -63,6 +63,7 @@ local function build_sections(keymaps, is_bound, shape)
       { km.quit, "Close diff workspace" },
       { "<C-q>", "Close merge workspace" },
       { "<Tab>", "Focus next pane" },
+      { "g", "Repository graph (merge/rebase)" },
       { "<S-Tab>", "Focus previous pane" },
       { km.next_hunk, "Next hunk" },
       { km.prev_hunk, "Previous hunk" },
@@ -308,7 +309,8 @@ local function toggle_review_help(tabpage, session)
       { "[ / ]", "Previous / next hunk" },
       { "c", "Commit staged changes (edit message)" },
       { "z", "Stash tracked changes (confirmation)" },
-      { "b / w", "List local branches / worktrees" },
+      { "b / w", "Manage local branches / worktrees" },
+      { "g", "Repository graph; m merge / r rebase selection" },
       { "h / <C-s> / <C-S-s>", "Help (:CodeDiff help also works)" },
     } },
     { title = "CHANGE TREES", items = {
@@ -336,12 +338,17 @@ local function toggle_review_help(tabpage, session)
       "",
       " Only Result is editable. Use normal Neovim editing keys.",
       " Manual edits need Mark Resolved; save Result before staging.",
+      " g opens the graph: c continues or a aborts a paused merge/rebase.",
     })
   else
     vim.list_extend(lines, {
       "",
       " Revert restores the file; unstage changes only Git's index.",
       " Revert/stash refuse unsaved files. Save outside review first.",
+      " Graph: g, select a branch/commit, then m merge or r rebase.",
+      " Confirm the direction with y; n cancels. Rebase rewrites history.",
+      " Both refuse dirty tracked changes and unsaved repo buffers.",
+      " Conflicts open the resolver; save/stage, then g and c to continue.",
     })
   end
   setup_highlights()

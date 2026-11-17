@@ -29,7 +29,7 @@ describe("Welcome Page", function()
       welcome = require("codediff.ui.welcome")
     end)
 
-    it("create_buffer returns a valid buffer with logo content", function()
+    it("create_buffer shows the clean-tree message and controls without a banner", function()
       local bufnr = welcome.create_buffer(80, 24)
 
       assert.is_true(vim.api.nvim_buf_is_valid(bufnr))
@@ -38,12 +38,11 @@ describe("Welcome Page", function()
       assert.is_false(vim.bo[bufnr].buflisted)
       assert.equals("codediff", vim.fn.fnamemodify(vim.api.nvim_buf_get_name(bufnr), ":t"))
 
-      -- Buffer should contain the logo
       local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
       local content = table.concat(lines, "\n")
-      assert.is_true(content:find("CODEDIFF") ~= nil or content:find("██") ~= nil, "Buffer should contain logo text")
-
-      -- Buffer should contain hint text
+      assert.is_nil(content:find("█", 1, true), "Buffer should not contain ASCII-art branding")
+      assert.is_not_nil(content:find("%[R%] Refresh"))
+      assert.is_not_nil(content:find("%[q%] Close"))
       assert.is_true(content:find("Working tree is clean") ~= nil, "Buffer should contain hint message")
     end)
 
@@ -81,23 +80,6 @@ describe("Welcome Page", function()
       assert.equals(number_before, vim.wo[win].number)
       assert.equals(signcolumn_before, vim.wo[win].signcolumn)
       assert.equals(wrap_before, vim.wo[win].wrap)
-    end)
-
-    it("create_buffer centers logo based on dimensions", function()
-      local bufnr = welcome.create_buffer(120, 40)
-      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-
-      -- First line with logo content should have leading spaces (centered)
-      local found_logo = false
-      for _, line in ipairs(lines) do
-        if line:find("██") then
-          found_logo = true
-          -- Should have leading spaces for centering
-          assert.is_true(line:match("^%s") ~= nil, "Logo line should have leading spaces for centering")
-          break
-        end
-      end
-      assert.is_true(found_logo, "Should find logo in buffer")
     end)
 
     it("welcome window override is saved and restored per window", function()
@@ -207,8 +189,8 @@ describe("Welcome Page", function()
       vim.fn.chdir(repo.dir)
       vim.cmd("edit " .. repo.path("test.txt"))
 
-      -- Open CodeDiff explorer
-      vim.cmd("CodeDiff")
+      -- Use the native revision view; the status popup keeps both diff panes.
+      vim.cmd("CodeDiff HEAD")
 
       -- Wait for explorer and diff to be ready
       -- CodeDiff opens a new tab, so we need to find the right tabpage

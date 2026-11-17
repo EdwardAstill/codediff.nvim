@@ -112,6 +112,48 @@ describe("Status popup workspace", function()
     vim.wo.number, vim.wo.relativenumber = saved_number, saved_relativenumber
   end)
 
+  it("browses working files and revisions without adding buffer tabs", function()
+    repo.write_file("deleted.txt", { "restored and changed" })
+    local function listed_buffers()
+      return vim.tbl_filter(function(buf) return vim.bo[buf].buflisted end, vim.api.nvim_list_bufs())
+    end
+    local before = listed_buffers()
+    local session = open()
+    select_file(session, "deleted.txt", "M")
+    assert.is_false(vim.bo[session.modified_bufnr].buflisted)
+    assert.is_false(vim.bo[session.original_bufnr].buflisted)
+    select_file(session, "staged.txt", "M", "staged")
+    assert.is_false(vim.bo[session.modified_bufnr].buflisted)
+    select_file(session, "new.txt", "??")
+    assert.is_false(vim.bo[session.modified_bufnr].buflisted)
+    select_file(session, "tracked.txt", "M")
+    assert.is_true(vim.bo[session.modified_bufnr].buflisted)
+    assert.same(before, listed_buffers())
+    assert.is_true(lifecycle.close(session.tabpage))
+    assert.same(before, listed_buffers())
+  end)
+
+  for _, file in ipairs({ { "deleted.txt", "M" }, { "new.txt", "??" } }) do
+    it("keeps edits to a newly previewed " .. file[2] .. " file visible after switching and closing", function()
+      repo.write_file(file[1], { "preview file" })
+      local session = open()
+      select_file(session, file[1], file[2])
+      local edited = session.modified_bufnr
+      user_buffers[#user_buffers + 1] = edited
+      assert.is_false(vim.bo[edited].buflisted)
+      vim.api.nvim_set_current_win(session.modified_win)
+      vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("A keep edit<Esc>", true, false, true), "xt", false)
+      assert.is_true(vim.bo[edited].modified)
+      select_file(session, "tracked.txt", "M")
+      assert.is_true(lifecycle.close(session.tabpage))
+      assert.is_true(vim.api.nvim_buf_is_loaded(edited))
+      assert.is_true(vim.bo[edited].buflisted)
+      assert.is_true(vim.bo[edited].modified)
+      assert.same({ "preview file keep edit" }, vim.api.nvim_buf_get_lines(edited, 0, -1, false))
+      assert.same({ "preview file" }, repo.read_file(file[1]))
+    end)
+  end
+
   it("preserves the current tab, underlying splits, unsaved buffers, focus and mappings", function()
     local working = vim.api.nvim_get_current_buf()
     vim.api.nvim_buf_set_lines(working, 0, 1, false, { "unsaved working change" })

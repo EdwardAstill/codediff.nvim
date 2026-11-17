@@ -4,6 +4,20 @@ local M = {}
 local virtual_file = require("codediff.core.virtual_file")
 local path = require("codediff.core.path")
 
+local function keep_preview(bufnr, listed)
+  vim.bo[bufnr].buflisted = listed or vim.bo[bufnr].modified
+  if vim.bo[bufnr].buflisted or vim.b[bufnr].codediff_preview then return end
+  vim.b[bufnr].codediff_preview = true
+  -- Browsing is temporary; edits must remain discoverable after closing review.
+  vim.api.nvim_create_autocmd({ "BufModifiedSet", "BufWinLeave" }, { buffer = bufnr, callback = function()
+    if vim.bo[bufnr].modified then
+      vim.bo[bufnr].buflisted = true
+      vim.b[bufnr].codediff_preview = nil
+      return true
+    end
+  end })
+end
+
 --- True when the panel opens before any file is chosen, so the panes start
 --- empty and the panel fills them on first selection.
 --- @param session_config SessionConfig
@@ -123,6 +137,7 @@ function M.show_real_file_buffer(win, bufnr)
   -- Only normal (file-backed) buffers are timestamp-checked by Neovim; scratch
   -- and codediff:// buffers are skipped, so don't bother them.
   if vim.api.nvim_buf_is_valid(bufnr) and vim.bo[bufnr].buftype == "" then
+    local listed = vim.bo[bufnr].buflisted
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     local file = vim.api.nvim_buf_get_name(bufnr)
     -- A clean BufNewFile buffer needs an explicit read when the file appears:
@@ -134,6 +149,7 @@ function M.show_real_file_buffer(win, bufnr)
     else
       pcall(vim.cmd, "silent! checktime " .. bufnr)
     end
+    keep_preview(bufnr, listed)
   end
   vim.api.nvim_win_set_buf(win, bufnr)
 end
@@ -159,9 +175,12 @@ function M.open_real_file(win, target)
     return bufnr
   end
 
+  local listed = vim.bo[bufnr].buflisted
   vim.api.nvim_set_current_win(win)
   vim.cmd("edit " .. vim.fn.fnameescape(target))
-  return vim.api.nvim_get_current_buf()
+  bufnr = vim.api.nvim_get_current_buf()
+  keep_preview(bufnr, listed)
+  return bufnr
 end
 
 -- Replace generated content without changing the buffer's editing permissions.

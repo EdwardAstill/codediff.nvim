@@ -6,22 +6,22 @@ The installer can use an existing Linux runtime or download one alongside the di
 
 ## Download sources and filenames
 
-The diff library and Linux runtime come from [esmuellert/codediff.nvim releases](https://github.com/esmuellert/codediff.nvim/releases), not this fork's release page. Their version is the plugin root's [`VERSION`](../VERSION), read by [`codediff.version`](../lua/codediff/version.lua).
+The diff library and Linux runtime come from [EdwardAstill/codediff.nvim releases](https://github.com/EdwardAstill/codediff.nvim/releases). Their version is the plugin root's [`VERSION`](../VERSION), read by [`codediff.version`](../lua/codediff/version.lua). The initial v4.0.6 assets are byte-for-byte snapshots of the original CodeDiff release, verified against GitHub's SHA-256 digests before copying. Downloads do not consult the original repository.
 
 | Component | Release asset | Installed in the plugin root as |
 | --- | --- | --- |
 | Diff library | `libvscode_diff_{os}_{arch}_{version}.{ext}` | `libvscode_diff_{version}.{ext}` |
 | Linux OpenMP runtime | `libgomp_linux_{arch}_{version}.so.1` | `libgomp.so.1` |
 
-The release URL is `https://github.com/esmuellert/codediff.nvim/releases/download/v{version}/{asset}`. Platform names are `linux`, `macos`, `windows`, and `android`; architecture names are `x64` and `arm64`. Extensions are `so`, `dylib`, and `dll` as appropriate. Termux is detected as Android, not ordinary Linux. Detection rules live in [`codediff.core.installer.common`](../lua/codediff/core/installer/common.lua); detecting a platform does not establish that a compatible release asset is available.
+The release URL is `https://github.com/EdwardAstill/codediff.nvim/releases/download/v{version}/{asset}`. Platform names are `linux`, `macos`, `windows`, and `android`; architecture names are `x64` and `arm64`. Extensions are `so`, `dylib`, and `dll` as appropriate. Termux is detected as Android, not ordinary Linux. Detection rules live in [`codediff.core.installer.common`](../lua/codediff/core/installer/common.lua); detecting a platform does not establish that a compatible release asset is available.
 
 An unversioned `libvscode_diff.so`, `libvscode_diff.dylib`, or `libvscode_diff.dll` in the plugin root is also recognized as a manual build. See the [build guide](BUILD.md) for source-build requirements and commands.
 
 ### Separately versioned watcher
 
-Live refresh also uses `codediff-watcher`, downloaded from [esmuellert/codediff releases](https://github.com/esmuellert/codediff/releases). Its version is pinned independently in [`codediff.core.installer.watcher`](../lua/codediff/core/installer/watcher.lua), not read from `VERSION`.
+Live refresh also uses `codediff-watcher`, downloaded from [this repository's watcher releases](https://github.com/EdwardAstill/codediff.nvim/releases/tag/watcher-v0.23.2). Its version is pinned independently in [`codediff.core.installer.watcher`](../lua/codediff/core/installer/watcher.lua), not read from `VERSION`. The initial v0.23.2 assets are verified snapshots of the original watcher binaries.
 
-Watcher assets are `codediff-watcher-{version}-{os}-{arch}.tar.gz` on Unix and `.zip` on Windows, under the release tag `v{version}`. The extracted executable is installed as `codediff-watcher_{version}` (with `.exe` on Windows). Extraction needs `tar` on Unix or PowerShell on Windows.
+Watcher assets are `codediff-watcher-{version}-{os}-{arch}.tar.gz` on Unix and `.zip` on Windows, under the release tag `watcher-v{version}`. The extracted executable is installed as `codediff-watcher_{version}` (with `.exe` on Windows). Extraction needs `tar` on Unix or PowerShell on Windows.
 
 The watcher installer first checks `CODEDIFF_WATCHER_PATH`, an unversioned executable in the plugin root, the pinned version there, and then `codediff-watcher` on `PATH`. Setting `CODEDIFF_WATCHER_NO_AUTO_INSTALL=1` disables its download. Android has no watcher release in this installer. Installation failures fall back to polling; this fallback does not replace the required diff library.
 
@@ -92,7 +92,7 @@ For a missing `libgomp.so.1` error:
 
 1. Check `:messages` for the failed download URL or dependency error. Confirm that the selected diff library matches the plugin's `VERSION` and target ABI.
 2. If using system libraries, install the distribution's GCC OpenMP runtime package using its package manager (for example, `libgomp1` on Debian/Ubuntu). A host package may not be visible to a Nix-provided Neovim.
-3. Alternatively, download `libgomp_linux_{arch}_{version}.so.1` from the same upstream release as the diff library. Select the matching architecture, then place it in the actual plugin root under the exact name `libgomp.so.1`. Do not use a wildcard rename or copy a runtime from a different architecture. Preserve any existing library before intentionally replacing it.
+3. Alternatively, download `libgomp_linux_{arch}_{version}.so.1` from the same release in this repository as the diff library. Select the matching architecture, then place it in the actual plugin root under the exact name `libgomp.so.1`. Do not use a wildcard rename or copy a runtime from a different architecture. Preserve any existing library before intentionally replacing it.
 4. For offline installation of the diff library, download the corresponding asset from that release and place it in the plugin root as `libvscode_diff_{version}.{ext}`. Inspect downloaded assets and verify a published checksum when available before loading them. Automatic downloads do not currently validate checksums.
 5. If no compatible binary is available, follow the [build guide](BUILD.md) to build for your environment. A build without OpenMP does not need its runtime for parallel diff computation.
 

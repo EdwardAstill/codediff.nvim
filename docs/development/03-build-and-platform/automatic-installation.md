@@ -1,5 +1,7 @@
 # Automatic Library Installation System
 
+Historical design notes: names, commands, and upstream URLs below predate this derivative. For current download sources and behavior, use [Dependency Distribution](../../dependency-distribution.md).
+
 This document describes the automatic installation system for the libvscode-diff C library.
 
 ## Overview
