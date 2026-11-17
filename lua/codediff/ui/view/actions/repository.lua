@@ -359,34 +359,44 @@ local function follow_worktree(session, root)
   end)
 end
 
-local function create(ctx, session, displayed_head, worktree)
+local function create(ctx, session, displayed_head, worktree, destination)
+  local entering_destination = worktree and not destination
   local handle = dialog.open(ctx, {
-    title = worktree and "New worktree: destination then new branch (one per line)" or "New branch: name",
-    lines = { worktree and ".worktrees/" or "" },
+    title = worktree and (entering_destination and "New worktree: destination" or "New worktree: branch name") or "New branch: name",
+    lines = { entering_destination and ".worktrees/" or "" },
     editable = true,
-    footer = "Ctrl-s create + switch   Ctrl-q cancel",
+    footer = worktree and (entering_destination and "Enter/Ctrl-s next   Ctrl-q cancel" or "Enter/Ctrl-s create + switch   Ctrl-q cancel") or "Ctrl-s create + switch   Ctrl-q cancel",
   })
-  if worktree then vim.cmd("startinsert!") end
+  if worktree then
+    vim.schedule(function()
+      if alive(session, handle) then vim.cmd("startinsert!") end
+    end)
+  end
   local function submit()
     if not alive(session, handle) or session.popup.repository_busy then return end
     local lines = vim.api.nvim_buf_get_lines(handle.bufnr, 0, -1, false)
-    local branch = lines[worktree and 2 or 1] or ""
-    if #lines > (worktree and 2 or 1) or vim.trim(branch) == "" then
-      report("Enter " .. (worktree and "a destination and a branch name, one per line" or "one branch name")); return
+    local value = lines[1] or ""
+    if #lines > 1 or vim.trim(value) == "" then
+      report(entering_destination and "Enter one worktree destination" or "Enter one branch name"); return
     end
+    if entering_destination then
+      -- Resolve relative input against this review, not a possibly changed editor cwd.
+      local path = vim.fs.normalize(require("codediff.core.path").make_ref(value, session.git_root).absolute, { expand_env = false })
+      create(ctx, session, displayed_head, true, path)
+      return
+    end
+    local branch = value
     if not worktree then
       mutate(session, handle, displayed_head, { "switch", "-c", branch }, branch, true, function() refresh(session) end)
       return
     end
-    local destination = lines[1] or ""
-    if vim.trim(destination) == "" then report("Worktree destination is empty"); return end
-    -- Resolve relative input against this review, not a possibly changed editor cwd.
-    destination = vim.fs.normalize(require("codediff.core.path").make_ref(destination, session.git_root).absolute, { expand_env = false })
     mutate(session, handle, displayed_head, { "worktree", "add", "-b", branch, "--", destination }, branch, false, function()
       follow_worktree(session, path_key(destination))
     end, destination)
   end
-  vim.keymap.set({ "n", "i" }, "<C-s>", submit, { buffer = handle.bufnr, silent = true, desc = "Create and switch" })
+  local desc = entering_destination and "Enter branch name" or "Create and switch"
+  vim.keymap.set({ "n", "i" }, "<C-s>", submit, { buffer = handle.bufnr, silent = true, desc = desc })
+  if worktree then vim.keymap.set({ "n", "i" }, "<CR>", submit, { buffer = handle.bufnr, silent = true, desc = desc }) end
   return handle
 end
 

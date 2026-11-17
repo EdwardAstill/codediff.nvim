@@ -263,9 +263,11 @@ q, Esc, or Ctrl-q closes the list.
 
 Press n in the branch list, type a name, then Ctrl-s to run git switch -c NAME.
 Press n in the worktree list: the destination starts with editable .worktrees/.
-Append a folder name or delete/replace the path; put the new branch on line 2.
-Ctrl-s creates and enters the worktree; relative paths use the current worktree.
-Ctrl-q cancels either draft. Git errors leave input available for correction.
+Append a folder name or delete/replace the path, then press Enter or Ctrl-s.
+A separate input asks for the new branch name; Enter or Ctrl-s creates and enters
+the worktree. Relative paths use the current worktree. Ctrl-q cancels either step
+without creating anything. Git errors retain the branch draft; to change the
+destination, cancel and start again.
 
 Branch checkout refuses unsaved repository buffers, and Git rejects conflicting
 on-disk changes. Worktree switching keeps old-tree buffers and unsaved edits,

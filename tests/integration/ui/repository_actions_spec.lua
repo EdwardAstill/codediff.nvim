@@ -61,10 +61,15 @@ describe("Review repository dialogs", function()
     return handle
   end
 
-  local function new_dialog(ctx, lines, worktree)
-    invoke(navigation_dialog(ctx, worktree), "n")
+  local function new_dialog(ctx, lines, destination)
+    invoke(navigation_dialog(ctx, destination ~= nil), "n")
     local handle = session.popup.dialog
     assert.is_true(vim.bo[handle.bufnr].modifiable)
+    if destination then
+      vim.api.nvim_buf_set_lines(handle.bufnr, 0, -1, false, { destination })
+      invoke(handle, "<C-s>")
+      handle = session.popup.dialog
+    end
     vim.api.nvim_buf_set_lines(handle.bufnr, 0, -1, false, lines)
     return handle
   end
@@ -394,10 +399,35 @@ describe("Review repository dialogs", function()
     assert.is_false(vim.bo[buf].modified)
   end)
 
+  it("validates each worktree input and cancels either step without creating refs or directories", function()
+    local ctx = open()
+    invoke(navigation_dialog(ctx, true), "n")
+    local destination = session.popup.dialog
+    vim.api.nvim_buf_set_lines(destination.bufnr, 0, -1, false, { "" })
+    invoke(destination, "<CR>")
+    assert.equals(destination, session.popup.dialog)
+    invoke(destination, "<C-q>")
+    assert.is_nil(session.popup.dialog)
+    invoke(navigation_dialog(ctx, true), "n")
+    destination = session.popup.dialog
+    local path = repo.path(".worktrees/cancelled")
+    vim.api.nvim_buf_set_lines(destination.bufnr, 0, -1, false, { path })
+    invoke(destination, "<CR>")
+    local branch = session.popup.dialog
+    assert.is_false(vim.api.nvim_buf_is_valid(destination.bufnr))
+    invoke(branch, "<CR>")
+    assert.equals(branch, session.popup.dialog)
+    vim.api.nvim_buf_set_lines(branch.bufnr, 0, -1, false, { "cancelled" })
+    invoke(branch, "<C-q>")
+    assert.is_nil(session.popup.dialog)
+    assert.equals(0, vim.fn.isdirectory(path))
+    assert.equals("refs/heads/main", vim.trim(repo.command({ "for-each-ref", "--format=%(refname)", "refs/heads/" })))
+  end)
+
   it("creates a named worktree at a spaced literal path and follows its root and close target", function()
     local ctx = open()
     local destination = repo.root .. "/new parent/-linked tree;$literal"
-    local handle = new_dialog(ctx, { "../new parent/-linked tree;$literal", "topic/new-tree" }, true)
+    local handle = new_dialog(ctx, { "topic/new-tree" }, "../new parent/-linked tree;$literal")
     invoke(handle, "<C-s>")
     eventually(function() return session.git_root == destination and not session.popup.dialog end)
     assert.equals("main", vim.trim(repo.command({ "branch", "--show-current" })))
@@ -420,7 +450,7 @@ describe("Review repository dialogs", function()
     assert.equals(0, vim.fn.delete(registered, "rf"))
     local ctx = open()
     for _, destination in ipairs({ registered, repo.path("tracked.txt"), repo.path("tracked.txt/child") }) do
-      local handle = new_dialog(ctx, { destination, "must-not-exist" }, true)
+      local handle = new_dialog(ctx, { "must-not-exist" }, destination)
       invoke(handle, "<C-s>")
       eventually(function() return not session.popup.repository_busy end)
       assert.equals(handle, session.popup.dialog)
@@ -433,8 +463,8 @@ describe("Review repository dialogs", function()
   it("accepts an existing empty destination directory", function()
     local destination = repo.root .. "/empty destination"
     vim.fn.mkdir(destination, "p")
-    local handle = new_dialog(open(), { destination, "topic/empty-destination" }, true)
-    invoke(handle, "<C-s>")
+    local handle = new_dialog(open(), { "topic/empty-destination" }, destination)
+    invoke(handle, "<CR>")
     eventually(function() return session.git_root == destination and not session.popup.dialog end)
     local value, code = repositories.git(destination, { "branch", "--show-current" })
     assert.equals(0, code)
@@ -471,12 +501,13 @@ describe("Review repository dialogs", function()
 
   it("keeps worktree drafts on invalid branch or occupied destination, and cancels without new refs", function()
     local ctx = open()
-    local handle = new_dialog(ctx, { repo.root .. "/not-created", "--detach" }, true)
+    local handle = new_dialog(ctx, { "--detach" }, repo.root .. "/not-created")
     invoke(handle, "<C-s>")
     eventually(function() return not session.popup.repository_busy end)
     assert.equals(handle, session.popup.dialog)
     assert.equals(0, vim.fn.isdirectory(repo.root .. "/not-created"))
-    vim.api.nvim_buf_set_lines(handle.bufnr, 0, -1, false, { repo.dir, "unused/tree" })
+    invoke(handle, "<C-q>")
+    handle = new_dialog(ctx, { "unused/tree" }, repo.dir)
     invoke(handle, "<C-s>")
     eventually(function() return not session.popup.repository_busy end)
     assert.equals(handle, session.popup.dialog)
