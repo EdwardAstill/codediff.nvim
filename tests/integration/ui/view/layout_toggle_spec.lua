@@ -425,7 +425,7 @@ describe("Layout toggle", function()
 
   it("toggles the welcome page without leaving welcome state", function()
     local tabpage = create_explorer_placeholder(h.get_temp_dir())
-    local welcome_buf = welcome.create_buffer(80, 24)
+    local welcome_buf = welcome.create_buffer()
     side_by_side.show_welcome(tabpage, welcome_buf)
 
     local side_by_side_welcome = vim.wait(5000, function()

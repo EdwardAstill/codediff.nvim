@@ -14,7 +14,7 @@ After [installation](#installation), save your file edits and run `:CodeDiff` in
 4. Inspect **Staged** before committing. Press `c`, check the displayed HEAD, type a message, then Ctrl-s to commit the index.
 5. Press `q` to close review and restore your editor's keys and chrome.
 
-When the working tree is clean, the diff pane shows only the clean-tree message and refresh/close controls, without a banner.
+When the working tree is clean, the diff pane is blank — no message or controls displayed.
 
 Browsing files does not add buffer tabs: newly opened previews stay unlisted, while existing editor buffers keep their listing. Editing a new working-file preview makes it a normal listed buffer so unsaved work remains discoverable; explicitly opening a file outside review does the same.
 

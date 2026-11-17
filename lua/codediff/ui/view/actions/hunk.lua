@@ -74,7 +74,7 @@ function M.refresh_selection(tabpage)
       if win and vim.api.nvim_win_is_valid(win) then
         local cfg = vim.api.nvim_win_get_config(win)
         if cfg.relative ~= "" and cfg.border and #cfg.border > 0 then
-          vim.api.nvim_win_set_config(win, { footer = " g? help ", footer_pos = "center" })
+          vim.api.nvim_win_set_config(win, { footer = " Enter accept ", footer_pos = "center" })
         end
       end
     end

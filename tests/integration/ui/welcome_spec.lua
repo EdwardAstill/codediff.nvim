@@ -29,25 +29,22 @@ describe("Welcome Page", function()
       welcome = require("codediff.ui.welcome")
     end)
 
-    it("create_buffer shows the clean-tree message and controls without a banner", function()
-      local bufnr = welcome.create_buffer(80, 24)
+    it("create_buffer creates a blank buffer when working tree is clean", function()
+      local bufnr = welcome.create_buffer()
 
       assert.is_true(vim.api.nvim_buf_is_valid(bufnr))
       assert.equals("nofile", vim.bo[bufnr].buftype)
       assert.equals("wipe", vim.bo[bufnr].bufhidden)
       assert.is_false(vim.bo[bufnr].buflisted)
       assert.equals("codediff", vim.fn.fnamemodify(vim.api.nvim_buf_get_name(bufnr), ":t"))
+      assert.is_true(vim.b[bufnr].codediff_welcome, "Buffer should have welcome marker")
 
       local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-      local content = table.concat(lines, "\n")
-      assert.is_nil(content:find("█", 1, true), "Buffer should not contain ASCII-art branding")
-      assert.is_not_nil(content:find("%[R%] Refresh"))
-      assert.is_not_nil(content:find("%[q%] Close"))
-      assert.is_true(content:find("Working tree is clean") ~= nil, "Buffer should contain hint message")
+      assert.are_same({ "" }, lines, "Buffer should be a single blank line")
     end)
 
     it("is_welcome_buffer returns true for welcome buffers", function()
-      local bufnr = welcome.create_buffer(80, 24)
+      local bufnr = welcome.create_buffer()
       assert.is_true(welcome.is_welcome_buffer(bufnr))
     end)
 
@@ -74,7 +71,7 @@ describe("Welcome Page", function()
       local signcolumn_before = vim.wo[win].signcolumn
       local wrap_before = vim.wo[win].wrap
 
-      welcome.create_buffer(80, 24)
+      welcome.create_buffer()
 
       -- Window options should be unchanged
       assert.equals(number_before, vim.wo[win].number)
@@ -89,7 +86,7 @@ describe("Welcome Page", function()
       local main_win = vim.api.nvim_get_current_win()
       local regular_buf = vim.api.nvim_create_buf(false, true)
       local other_buf = vim.api.nvim_create_buf(false, true)
-      local welcome_buf = welcome.create_buffer(80, 24)
+      local welcome_buf = welcome.create_buffer()
 
       vim.wo[main_win].number = true
       vim.wo[main_win].relativenumber = true

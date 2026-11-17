@@ -170,12 +170,7 @@ function M.show_welcome(tabpage)
     require("codediff.ui.refresh").ready(tabpage)
     return true
   end
-  local width, height = vim.api.nvim_win_get_width(win), vim.api.nvim_win_get_height(win)
-  local original = session.original_win
-  if not session.popup and session.layout ~= "inline" and original and vim.api.nvim_win_is_valid(original) then
-    width, height = width + vim.api.nvim_win_get_width(original) + 1, vim.api.nvim_win_get_height(original)
-  end
-  local buf = welcome.create_buffer(width, height)
+  local buf = welcome.create_buffer()
   if session.layout == "inline" then
     require("codediff.ui.view.inline_view").show_welcome(tabpage, buf)
   else

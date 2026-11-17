@@ -159,8 +159,8 @@ function M.geometry(hide_tree, merge)
     }
   end
   return {
-    unstaged = pane("Unstaged", merge and "s stage g? help" or "s stage h help", col, row, left, top),
-    staged = pane("Staged", merge and "s unstage g? help" or "s unstage h help", col, row + top, left, height - top),
+    unstaged = pane("Unstaged", "s stage h help", col, row, left, top),
+    staged = pane("Staged", "s unstage h help", col, row + top, left, height - top),
     original = pane("Index", "s stage/unstage  h help", col + left, row, before, height),
     modified = pane("Current", "s stage/unstage  h help", col + left + before, row, width - left - before, height),
   }
@@ -170,12 +170,11 @@ local function with_result(configs)
   configs.original.height = configs.unstaged.height
   configs.modified.height = configs.unstaged.height
   configs.original.title, configs.modified.title = " Incoming (:3) ", " Current (:2) "
-  configs.original.footer, configs.modified.footer = " g? help ", " g? help "
   configs.base = vim.tbl_extend("force", configs.original, {
-    row = configs.staged.row, height = configs.staged.height, title = " Base (:1) ", footer = " g? help ",
+    row = configs.staged.row, height = configs.staged.height, title = " Base (:1) ",
   })
   configs.result = vim.tbl_extend("force", configs.modified, {
-    row = configs.staged.row, height = configs.staged.height, title = " Result ", footer = " g? help ",
+    row = configs.staged.row, height = configs.staged.height, title = " Result ",
   })
   for _, cfg in pairs(configs) do
     if cfg.border == "none" then cfg.title, cfg.title_pos, cfg.footer, cfg.footer_pos = nil, nil, nil, nil end
