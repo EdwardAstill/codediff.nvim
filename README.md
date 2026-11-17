@@ -24,7 +24,7 @@ Need to undo a choice? [Unstage and revert are different](#stage-unstage-and-rev
 
 ## Shortcuts
 
-Normal-mode keys below are defaults unless noted. **The status popup has fixed review controls, except when [merging](#conflict-and-merge-controls); native revision/history/inline views use configurable controls.** `<leader>` means your configured Neovim leader, not necessarily Space.
+Normal-mode keys below are defaults unless noted. **The status popup has fixed review controls and [simple merge controls](#conflict-and-merge-controls); native revision/history/inline views use configurable controls.** `<leader>` means your configured Neovim leader, not necessarily Space.
 
 ### Review controls
 
@@ -114,7 +114,23 @@ For an already-conflicted file, select it under **Merge Changes**, or use `:Code
 
 **Default Result for a fresh Git conflict:** automatic non-conflicting and identical changes, with Base text at unresolved conflicts—not conflict markers. The gutter and file tree show what still needs resolution. Existing Result edits are preserved on file switches and reopening within Neovim; previously edited files are never blindly reseeded, so an existing file may retain conflict markers. Approvals survive only while that buffer remains loaded, not across buffer deletion or Neovim restarts.
 
-Configure the conflict actions below under `keymaps.conflict`. Incoming/Current always mean the same Git stages, regardless of focus; during a rebase, Git's ours/theirs labels can differ from your usual branch perspective. Quit, help, file navigation, and tree focus/visibility use `keymaps.view`; Tab/Shift-Tab and Ctrl-q are fixed.
+**Popup workflow:** review each conflict, resolve/save the file, then stage it separately.
+
+| Focus | Key | Action |
+| --- | --- | --- |
+| Incoming / Current | Enter | Accept the focused change |
+| Incoming / Current | `b` | Take both versions, putting the focused source first |
+| Result (Normal mode) | Enter | Approve the manually edited block |
+| Merge panes | `u` / `Ctrl-r` | Undo / redo Result and approvals |
+| Merge panes | `]x` / `[x` | Next / previous unresolved conflict (configurable) |
+| Workspace | `Tab` / `Shift-Tab` | Next / previous pane |
+| Conflict tree | `r` | Resolve and save the reviewed file without staging |
+| Changes tree | `s` | Stage the resolved file |
+| Workspace | `g` | Graph: `c` continues / `a` aborts (confirmation required) |
+
+Tree `r` requires every block to have been explicitly accepted or marked resolved, validates the current merge inputs, saves Result, and moves the file to **Changes**. It never silently accepts unreviewed Base text. Git's index remains unmerged until `s` stages the file. Use `g?` or `:CodeDiff help` for the short popup guide.
+
+The additional configurable conflict actions below remain available, including in native merge tabs. Configure them under `keymaps.conflict`. Incoming/Current always mean the same Git stages, regardless of focus; during a rebase, Git's ours/theirs labels can differ from your usual branch perspective. Quit, help, file navigation, and tree focus/visibility use `keymaps.view`; Tab/Shift-Tab and Ctrl-q are fixed. Native help reflects the configured bindings.
 
 | Focus | Key | Action |
 | --- | --- | --- |
@@ -134,11 +150,11 @@ Configure the conflict actions below under `keymaps.conflict`. Incoming/Current 
 | Merge workspace | `]f` / `[f`, `gf` | Next / previous listed file; open the focused file in the previous tab |
 | Merge workspace | `g?`, `q` / `Ctrl-q` | Show merge shortcuts; close |
 
-Result uses ordinary Neovim editing keys, even in the popup: `i` inserts, `h`/`j`/`k`/`l` move normally, and `s` is **not** hunk staging. Use `g?` or `:CodeDiff help` for merge help. Popup trees keep their fixed tree controls, including `s` to stage. A manual edit does **not** resolve a conflict: inspect it and use Mark Resolved. Editing an approved conflict makes it unresolved again. Per-conflict choices can replace an earlier choice; Take All skips already resolved blocks. Reset All resets every conflict, while preserving automatic non-conflicting edits. Both preserves both complete alternatives in the chosen order.
+Result uses ordinary Neovim editing keys, even in the popup: `i` inserts, `h`/`j`/`k`/`l` move normally, and `s` is **not** hunk staging. A manual edit does **not** resolve a conflict: inspect it and press Normal-mode Enter in popup Result, or use Mark Resolved. Editing an approved conflict makes it unresolved again. Per-conflict choices can replace an earlier choice; Take All skips already resolved blocks. Reset All resets every conflict, while preserving automatic non-conflicting edits. Both preserves both complete alternatives in the chosen order.
 
 The `m`/`r` integration shortcuts belong to the graph, not Result. In Result and native editable views, `m` remains Neovim's normal mark prefix.
 
-Use `:write` in Result, then `-` to stage the file (`s` in a popup tree also works). CodeDiff blocks file/folder/all staging when any affected conflict is unreviewed, unresolved, unsaved, or based on changed inputs. Hunk staging, unstaging, and Revert cannot bypass conflict review. Tree rows show unresolved counts, or **needs review** before opening a file. After staging every conflict, press `g`, then `c` and confirm to continue the merge/rebase. A rebase may stop again at another commit. Graph `a` offers an explicit abort confirmation. Ordinary review's commit composer (`c`, message, Ctrl-s) can still finish a merge, including a Current-only resolution with no staged tree diff. Saving is not staging or continuing; external `git add` bypasses these plugin safeguards.
+In a popup, use tree `r` after reviewing every block, then `s` in Changes to stage. In native merge tabs, use `:write` in Result, then `-` to stage the file. CodeDiff blocks file/folder/all staging when any affected conflict is unreviewed, unresolved, unsaved, or based on changed inputs. Hunk staging, unstaging, and Revert cannot bypass conflict review. Tree rows show unresolved counts, or **needs review** before opening a file. After staging every conflict, press `g`, then `c` and confirm to continue the merge/rebase. A rebase may stop again at another commit. Graph `a` offers an explicit abort confirmation. Ordinary review's commit composer (`c`, message, Ctrl-s) can still finish a merge, including a Current-only resolution with no staged tree diff. Saving is not staging or continuing; external `git add` bypasses these plugin safeguards.
 
 Closing offers **Discard**, **Cancel**, or **Keep changes and close** for unsaved Results. Discard reloads the last on-disk contents; it does not undo an earlier save. Keep retains buffers and undo history. If preserved edits make a conflict's range ambiguous, automatic replacement is refused: finish editing Result manually and Mark Resolved. Binary, missing/deleted, symlink/submodule, differing file-mode, and unsupported rename conflicts must be resolved outside CodeDiff. Text add/add conflicts are supported with an empty Base. See [Git mergetool setup](#merge-tool).
 
